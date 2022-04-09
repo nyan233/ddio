@@ -1,2 +1,6 @@
 //go:build darwin || openbsd || freebsd
-package event_poll
+package ddio
+
+type kqueue struct {
+
+}

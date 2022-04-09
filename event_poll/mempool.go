@@ -1,4 +1,4 @@
-package event_poll
+package ddio
 
 import (
 	"fmt"
@@ -11,8 +11,8 @@ import (
 // 负责管理buffer的内存池
 
 const (
-	DEFAULT_BLOCK              = 512      // 一个内存块的默认大小
-	DEFAULT_POOL_SIZE          = DEFAULT_BLOCK * 8192 // 默认池大小 (512 * 8192) B
+	DEFAULT_BLOCK              = 4096      // 一个内存块的默认大小
+	DEFAULT_POOL_SIZE          = DEFAULT_BLOCK * 8192 // 默认池大小 (DEFAULT_BLOCK * 8192) B
 	FreeBufferZeroBase uintptr = math.MaxInt
 	maxUint64          uint64  = 0xffffffffffffffff
 )
@@ -32,11 +32,10 @@ func NewBufferPool(block, size int) *BufferPool {
 		size = (1 << size) * block
 	}
 	heapSlice := make([]byte, size)
-	header := (*reflect.SliceHeader)(unsafe.Pointer(&heapSlice))
 	return &BufferPool{
 		block:    int32(block),
 		size:     int32(size),
-		pool:     unsafe.Pointer(header.Data),
+		pool:     &heapSlice,
 		allocMap: make([]uint64, size/block/64),
 	}
 }
@@ -44,8 +43,8 @@ func NewBufferPool(block, size int) *BufferPool {
 type BufferPool struct {
 	mu sync.Mutex
 	// 初始化的Buffer内存池
-	// 该指针总是指向第一个位置
-	pool unsafe.Pointer
+	// *[]byte使它更容易被gc回收
+	pool *[]byte
 	// 记录分配状况的BitMap
 	allocMap []uint64
 	// block
@@ -56,19 +55,23 @@ type BufferPool struct {
 
 // AllocBuffer variable == n * 256
 func (p *BufferPool) AllocBuffer(n int) ([]byte, bool) {
+	if !checkN(n) {
+		return nil,false
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	// 一次只支持最多分配一个BitMap的大小，即: 512*64 B
 	if (1<<n)-1 == maxUint64 {
 		return nil, false
 	}
+	poolPtr := (*reflect.SliceHeader)(unsafe.Pointer(p.pool)).Data
 	// slice ptr and alloc ok
-	var ptr = uintptr(p.pool)
+	var ptr uintptr
 	var allocOk bool
 	// 寻找可以分配的span
 	for i := 0; i < len(p.allocMap); i++ {
 		// 重置内存池的临时指针
-		ptr = ptr + uintptr(64*int(p.block)*i)
+		ptr = poolPtr + uintptr(64*int(p.block)*i)
 		// 没有分配过的情况则重头开始分配
 		if p.allocMap[i]^maxUint64 == maxUint64 {
 			allocOk = true
@@ -121,9 +124,10 @@ func (p *BufferPool) FreeBuffer(ptr *[]byte) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	header := (*reflect.SliceHeader)(unsafe.Pointer(ptr))
-	offset := header.Data - uintptr(p.pool)
+	poolPtr := (*reflect.SliceHeader)(unsafe.Pointer(p.pool)).Data
+	offset := header.Data - poolPtr
 	// 判断该Buffer是否由MemPool分配
-	if offset%DEFAULT_BLOCK != 0 || offset > DEFAULT_POOL_SIZE {
+	if offset % uintptr(p.block) != 0 || offset > uintptr(p.size) {
 		panic("the buffer is not BufferPool alloc")
 	}
 	// 重置原来的指针使其指向runtime.ZeroBase
@@ -144,6 +148,9 @@ func (p *BufferPool) FreeBuffer(ptr *[]byte) {
 // Example
 //	pool.Grow(&buffer,4)
 func (p *BufferPool) Grow(ptr *[]byte,nBlock int) bool {
+	if !checkN(nBlock) {
+		return false
+	}
 	p.mu.Lock()
 	header := (*reflect.SliceHeader)(unsafe.Pointer(ptr))
 	// 计算扩容Buffer需要多少Block
@@ -167,4 +174,8 @@ func mallocView(ptr *BufferPool) {
 	for k,v := range ptr.allocMap {
 		fmt.Printf("(%d) -> %b\n",k + 1,v)
 	}
+}
+
+func checkN(n int) bool {
+	return n > 0
 }

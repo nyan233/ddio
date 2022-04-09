@@ -1,6 +1,9 @@
-package event_poll
+package ddio
 
 // 这里描述了一些通用的提示值
+
+// EventFlags 通用的事件掩码
+type EventFlags int
 
 const (
 	EVENT_READ  int = 0x01 // 监听可读事件
