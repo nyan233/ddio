@@ -42,7 +42,7 @@ func BenchmarkTask(b *testing.B) {
 		onErr := func(err error) {
 			fmt.Println(err)
 		}
-		pool := NewWorkerPool(800,1600,time.Minute,onErr)
+		pool := NewWorkerPool(80,160,time.Minute,onErr)
 		for i := 0; i < b.N; i++ {
 			useWorkerPool(pool)
 		}

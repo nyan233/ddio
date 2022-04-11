@@ -30,7 +30,7 @@ func NewPoller(onErr func(err error)) *poller {
 
 func (p poller) Exec(maxEvent int,timeOut time.Duration) ([]Event,error) {
 	events := make([]unix.EpollEvent,maxEvent)
-	nEvent, err := p.Wait(events)
+	nEvent, err := p.Wait(events,timeOut)
 	if err != nil {
 		return nil, err
 	}
@@ -102,3 +102,6 @@ func (p poller) AllEvents() []Event {
 	return events
 }
 
+func (p poller) Exit() error {
+	return nil
+}

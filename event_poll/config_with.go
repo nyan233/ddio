@@ -1,5 +1,9 @@
 package ddio
 
-type NetPollConfig struct {
+import "net"
 
+type NetPollConfig struct {
+	Protocol int
+	IP   net.IP
+	Port int
 }

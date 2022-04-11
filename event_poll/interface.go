@@ -19,8 +19,13 @@ type ConnectionEventHandler interface {
 
 // ListenerEventHandler 监听事件处理器
 type ListenerEventHandler interface {
+	// OnInit 初始化监听者事件处理器时调用的方法
+	OnInit(config *NetPollConfig) (*Event,error)
+	// OnAccept 有新连接到来时调用的方法
 	OnAccept(ev Event) (connFd int, err error)
+	// OnClose 客户端退出建立连接阶段调用的方法
 	OnClose(ev Event) error
+	// OnError 事件循环出错时调用的方法
 	OnError(ev Event,err error)
 }
 
@@ -28,6 +33,9 @@ type ListenerEventHandler interface {
 type EventLoop interface {
 	// Exec 开启事件循环
 	Exec(maxEvent int,timeOut time.Duration) ([]Event,error)
+
+	// Exit 退出事件循环
+	Exit() error
 
 	// With 往轮询器中添加事件
 	With(event *Event) error
@@ -41,4 +49,5 @@ type EventLoop interface {
 
 	// AllEvents 获取所有监听的事件
 	AllEvents() []Event
+
 }

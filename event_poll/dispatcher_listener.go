@@ -16,11 +16,13 @@ type ListenerMultiEventDispatcher struct {
 	connMds []*ConnMultiEventDispatcher
 	// 关闭标志
 	closed uint64
+	// 完成通知
+	done chan struct{}
 	// 一些主多路事件派发器的配置
 	config *DisPatcherConfig
 }
 
-func NewListenerMultiEventDispatcher(handler ListenerEventHandler,config *DisPatcherConfig) *ListenerMultiEventDispatcher {
+func NewListenerMultiEventDispatcher(handler ListenerEventHandler,onErr ErrorHandler,config *DisPatcherConfig) (*ListenerMultiEventDispatcher,error) {
 	lmed := &ListenerMultiEventDispatcher{}
 	// 启动绑定的从多路事件派发器
 	connMds := make([]*ConnMultiEventDispatcher,runtime.NumCPU())
@@ -29,13 +31,39 @@ func NewListenerMultiEventDispatcher(handler ListenerEventHandler,config *DisPat
 	}
 	lmed.handler = handler
 	lmed.config = config
+	lmed.onErr = onErr
+	lmed.poll = NewPoller(onErr)
+	initEvent, err := lmed.handler.OnInit(config.EngineConfig)
+	if err != nil {
+		return nil,err
+	}
+	err = lmed.poll.With(initEvent)
+	if err != nil {
+		return nil, err
+	}
 	go lmed.openLoop()
-	return lmed
+	return lmed,nil
+}
+
+func (l *ListenerMultiEventDispatcher) Close() error {
+	if !atomic.CompareAndSwapUint64(&l.closed,0,1) {
+		return ErrorEpollClosed
+	}
+	<-l.done
+	// 触发主多路事件派发器的定义的错误回调函数
+	// 因为负责监听连接的Fd只有一个，所以直接取就好
+	l.handler.OnError(l.poll.AllEvents()[0],ErrorEpollClosed)
+	// 关闭所有子事件派发器
+	for _,v := range l.connMds{
+		v.Close()
+	}
+	return l.poll.Exit()
 }
 
 func (l *ListenerMultiEventDispatcher) openLoop() {
 	for {
 		if atomic.LoadUint64(&l.closed) == 1 {
+			l.done <- struct{}{}
 			return
 		}
 		events, err := l.poll.Exec(1, time.Second*2)
