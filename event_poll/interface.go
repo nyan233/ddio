@@ -1,14 +1,14 @@
 package ddio
 
-import "time"
+import (
+	"net"
+	"time"
+)
 
 // ConnectionEventHandler 连接事件处理器
 type ConnectionEventHandler interface {
-	// OnRead 读就绪事件触发
-	OnRead(readBuffer, writeBuffer []byte, flags EventFlags) error
-
-	// OnWrite 写就绪事件触发
-	OnWrite(writeBuffer []byte, flags EventFlags) error
+	// OnData 接收到数据时触发
+	OnData(conn Conn) error
 
 	// OnClose 对端关闭事件触发
 	OnClose(ev Event) error
@@ -50,4 +50,33 @@ type EventLoop interface {
 	// AllEvents 获取所有监听的事件
 	AllEvents() []Event
 
+}
+
+type Conn interface {
+	// TakeReadBytes 拿出所有读取的字节
+	TakeReadBytes() []byte
+	// TakeWriteBuffer 拿出Conn绑定的写入缓冲
+	// 该接口针对较大的数据使用
+	TakeWriteBuffer() *[]byte
+	// GrowWriteBuffer 扩容缓冲区
+	GrowWriteBuffer(buf *[]byte, nCap int) bool
+	// WriteBytes 该接口针对小数据量
+	WriteBytes(p []byte)
+	// Close 关闭连接
+	// 非立即关闭，采取延迟关闭的策略
+	Close() error
+	// Addr 获取兼容net包的Socket Addr
+	Addr() net.Addr
+	SetDeadLine(deadline time.Time) error
+	SetTimeout(timeout time.Duration) error
+}
+
+
+// Balanced 自定义负载均衡器的接口
+type Balanced interface {
+	// Name 负载均衡器的名字或者其算法名
+	Name() string
+	// Target 输入的Seek为ConnectionEventHandler的数量
+	// 负载均衡器需要给出一个正确的目标
+	Target(seek int) int
 }
