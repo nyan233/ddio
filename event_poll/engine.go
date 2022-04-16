@@ -10,11 +10,11 @@ type Engine struct {
 	config *NetPollConfig
 }
 
-func NewEngine(handler ListenerEventHandler,onErr ErrorHandler,config *DisPatcherConfig) (*Engine,error) {
+func NewEngine(handler ListenerEventHandler,config *DisPatcherConfig) (*Engine,error) {
 	engine := &Engine{}
 	engine.mds = make([]*ListenerMultiEventDispatcher,runtime.NumCPU())
 	for k := range engine.mds {
-		tmp, err := NewListenerMultiEventDispatcher(handler,onErr,config)
+		tmp, err := NewListenerMultiEventDispatcher(handler,config)
 		if err != nil {
 			return nil,err
 		}

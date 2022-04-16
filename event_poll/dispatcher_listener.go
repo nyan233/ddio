@@ -3,6 +3,7 @@ package ddio
 import (
 	"runtime"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -10,8 +11,6 @@ import (
 type ListenerMultiEventDispatcher struct {
 	handler ListenerEventHandler
 	poll EventLoop
-	// 错误处理函数
-	onErr ErrorHandler
 	// 与监听事件多路事件派发器绑定的连接多路事件派发器
 	connMds []*ConnMultiEventDispatcher
 	// 关闭标志
@@ -22,17 +21,26 @@ type ListenerMultiEventDispatcher struct {
 	config *DisPatcherConfig
 }
 
-func NewListenerMultiEventDispatcher(handler ListenerEventHandler,onErr ErrorHandler,config *DisPatcherConfig) (*ListenerMultiEventDispatcher,error) {
+func NewListenerMultiEventDispatcher(handler ListenerEventHandler,config *DisPatcherConfig) (*ListenerMultiEventDispatcher,error) {
 	lmed := &ListenerMultiEventDispatcher{}
 	// 启动绑定的从多路事件派发器
 	connMds := make([]*ConnMultiEventDispatcher,runtime.NumCPU())
 	for i := 0; i < len(connMds);i++ {
-		connMds[i] = NewConnMultiEventDispatcher(config.ConnHandler,config.ConnErrHandler)
+		tmp, err := NewConnMultiEventDispatcher(config.ConnHandler)
+		if err != nil {
+			return nil, err
+		}
+		connMds[i] = tmp
 	}
+	lmed.connMds = connMds
 	lmed.handler = handler
 	lmed.config = config
-	lmed.onErr = onErr
-	lmed.poll = NewPoller(onErr)
+	poller,err := NewPoller()
+	if err != nil {
+		logger.ErrorFromErr(err)
+		return nil,err
+	}
+	lmed.poll = poller
 	initEvent, err := lmed.handler.OnInit(config.EngineConfig)
 	if err != nil {
 		return nil,err
@@ -66,22 +74,28 @@ func (l *ListenerMultiEventDispatcher) openLoop() {
 			l.done <- struct{}{}
 			return
 		}
-		events, err := l.poll.Exec(1, time.Second*2)
-		if err != nil {
-			l.onErr(err)
+		events, err := l.poll.Exec(1, time.Duration((time.Second * 2).Milliseconds()))
+		if len(events) == 0 {
+			continue
+		}
+		if err != syscall.EAGAIN && err != nil {
+			break
 		}
 		event := events[0]
 		connFd, err := l.handler.OnAccept(event)
 		if err != nil {
-			l.onErr(err)
+			logger.ErrorFromString("accept error: " + err.Error())
+			continue
 		}
 		connEvent := &Event{
 			sysFd: int32(connFd),
-			event: l.config.ConnEvent,
+			event: EVENT_READ,
 		}
-		err = l.connMds[connFd%len(l.connMds)].AddConnEvent(connEvent)
+		n := l.config.Balanced.Target(len(l.connMds))
+		err = l.connMds[n].AddConnEvent(connEvent)
 		if err != nil {
-			l.onErr(err)
+			logger.ErrorFromString("add connection event error : " + err.Error())
+			break
 		}
 	}
 }

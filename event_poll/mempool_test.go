@@ -40,8 +40,9 @@ func TestMemPool(t *testing.T) {
 }
 
 func BenchmarkAlloc(b *testing.B) {
-	pool := NewBufferPool(20,10)
+
 	b.Run("BigBufferPoolAlloc", func(b *testing.B) {
+		pool := NewBufferPool(20,10)
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			buf,ok := pool.AllocBuffer(1)

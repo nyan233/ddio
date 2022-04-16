@@ -11,10 +11,12 @@ import (
 // 负责管理buffer的内存池
 
 const (
-	DEFAULT_BLOCK              = 4096      // 一个内存块的默认大小
+	DEFAULT_BLOCK              = 4096                 // 一个内存块的默认大小
 	DEFAULT_POOL_SIZE          = DEFAULT_BLOCK * 8192 // 默认池大小 (DEFAULT_BLOCK * 8192) B
 	FreeBufferZeroBase uintptr = math.MaxInt
 	maxUint64          uint64  = 0xffffffffffffffff
+	sysPageSize        int     = 4096
+	defaultPending     byte    = 253
 )
 
 // NewBufferPool
@@ -32,6 +34,7 @@ func NewBufferPool(block, size int) *BufferPool {
 		size = (1 << size) * block
 	}
 	heapSlice := make([]byte, size)
+
 	return &BufferPool{
 		block:    int32(block),
 		size:     int32(size),
@@ -56,7 +59,7 @@ type BufferPool struct {
 // AllocBuffer variable == n * 256
 func (p *BufferPool) AllocBuffer(n int) ([]byte, bool) {
 	if !checkN(n) {
-		return nil,false
+		return nil, false
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -127,7 +130,7 @@ func (p *BufferPool) FreeBuffer(ptr *[]byte) {
 	poolPtr := (*reflect.SliceHeader)(unsafe.Pointer(p.pool)).Data
 	offset := header.Data - poolPtr
 	// 判断该Buffer是否由MemPool分配
-	if offset % uintptr(p.block) != 0 || offset > uintptr(p.size) {
+	if offset%uintptr(p.block) != 0 || offset > uintptr(p.size) {
 		panic("the buffer is not BufferPool alloc")
 	}
 	// 重置原来的指针使其指向runtime.ZeroBase
@@ -147,22 +150,22 @@ func (p *BufferPool) FreeBuffer(ptr *[]byte) {
 // Grow 扩容原来的Buffer,可指定的扩容大小为n * p.block
 // Example
 //	pool.Grow(&buffer,4)
-func (p *BufferPool) Grow(ptr *[]byte,nBlock int) bool {
+func (p *BufferPool) Grow(ptr *[]byte, nBlock int) bool {
 	if !checkN(nBlock) {
 		return false
 	}
 	p.mu.Lock()
 	header := (*reflect.SliceHeader)(unsafe.Pointer(ptr))
 	// 计算扩容Buffer需要多少Block
-	growNBlock := header.Cap / int(p.block) + nBlock
+	growNBlock := header.Cap/int(p.block) + nBlock
 	p.mu.Unlock()
-	growBuffer,ok := p.AllocBuffer(growNBlock)
+	growBuffer, ok := p.AllocBuffer(growNBlock)
 	if !ok {
 		return ok
 	}
 	// 分配新的Buffer并将旧的Buffer拷贝进去
 	growBuffer = growBuffer[:header.Len]
-	copy(growBuffer,*ptr)
+	copy(growBuffer, *ptr)
 	// 释放旧的Buffer
 	p.FreeBuffer(ptr)
 	return true
@@ -170,9 +173,9 @@ func (p *BufferPool) Grow(ptr *[]byte,nBlock int) bool {
 
 // 打印分配的情况
 func mallocView(ptr *BufferPool) {
-	fmt.Printf("BufferPool : Size : %d, Pointer : %p, Block : %d\n",ptr.size,ptr.pool,ptr.block)
-	for k,v := range ptr.allocMap {
-		fmt.Printf("(%d) -> %b\n",k + 1,v)
+	fmt.Printf("BufferPool : Size : %d, Pointer : %p, Block : %d\n", ptr.size, ptr.pool, ptr.block)
+	for k, v := range ptr.allocMap {
+		fmt.Printf("(%d) -> %b\n", k+1, v)
 	}
 }
 

@@ -6,5 +6,5 @@ import (
 )
 
 var (
-	logger = bilog.NewLogger(os.Stdout,bilog.PANIC,bilog.WithTimes(),bilog.WithCaller())
+	logger bilog.Logger = bilog.NewLogger(os.Stdout,bilog.PANIC,bilog.WithTimes(),bilog.WithCaller())
 )

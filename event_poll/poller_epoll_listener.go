@@ -8,10 +8,10 @@ import (
 // TCPListener Main Reactor
 // 负责监听事件
 type TCPListener struct {
-	event int
+	event EventFlags
 }
 
-func NewTCPListener(event int) *TCPListener {
+func NewTCPListener(event EventFlags) *TCPListener {
 	return &TCPListener{
 		event: event,
 	}
@@ -23,7 +23,7 @@ func (T *TCPListener) OnInit(config *NetPollConfig) (*Event, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_REUSEADDR, 1)
+	err = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_REUSEPORT, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -36,8 +36,12 @@ func (T *TCPListener) OnInit(config *NetPollConfig) (*Event, error) {
 	if err != nil {
 		return nil, err
 	}
+	err = unix.Listen(fd, 255)
+	if err != nil {
+		return nil, err
+	}
 	event.sysFd = int32(fd)
-	event.event = EventFlags(T.event)
+	event.event = T.event
 	return event,nil
 }
 

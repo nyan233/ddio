@@ -1,8 +1,10 @@
 package ddio
 
 type DisPatcherConfig struct {
-	ConnEvent EventFlags
-	ConnHandler ConnectionEventHandler
-	ConnErrHandler ErrorHandler
+	// 连接处理器
+	ConnHandler  ConnectionEventHandler
+	// 负载均衡器
+	Balanced     Balanced
+	// 网络轮询器的配置
 	EngineConfig *NetPollConfig
 }
