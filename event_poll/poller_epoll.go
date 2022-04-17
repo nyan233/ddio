@@ -43,15 +43,15 @@ func (p poller) Exec(maxEvent int, timeOut time.Duration) ([]Event, error) {
 	}
 	events = events[:nEvent]
 	stdEvents := make([]Event, nEvent)
+	p.mu.Lock()
 	for i := 0; i < nEvent; i++ {
 		event := events[i]
-		p.mu.Lock()
 		stdEvents[i] = Event{
 			sysFd: event.Fd,
 			event: epollToEvent(int(p.events[int(event.Fd)])),
 		}
-		p.mu.Unlock()
 	}
+	p.mu.Unlock()
 	return stdEvents, nil
 }
 

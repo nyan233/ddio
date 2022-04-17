@@ -4,6 +4,7 @@ import (
 	"math/rand"
 	"reflect"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 	"unsafe"
@@ -40,25 +41,71 @@ func TestMemPool(t *testing.T) {
 }
 
 func BenchmarkAlloc(b *testing.B) {
-
-	b.Run("BigBufferPoolAlloc", func(b *testing.B) {
-		pool := NewBufferPool(20,10)
+	b.Run("4096B-MemPoolAlloc", func(b *testing.B) {
+		pool := NewBufferPool(12,8)
 		b.ReportAllocs()
+		b.StartTimer()
+		rand.Seed(time.Now().UnixNano())
 		for i := 0; i < b.N; i++ {
 			buf,ok := pool.AllocBuffer(1)
 			if !ok {
 				continue
 			}
-			if i % 2 == 0 {
+			if rand.Intn(10) + 1 > 5 {
 				pool.FreeBuffer(&buf)
 			}
 		}
+		b.StopTimer()
 	})
-	b.Run("BigBufferNativeAlloc", func(b *testing.B) {
+	b.Run("4096B-MemPoolAllocAll", func(b *testing.B) {
+		pool := NewBufferPool(12,8)
 		b.ReportAllocs()
+		b.StartTimer()
 		for i := 0; i < b.N; i++ {
-			buf := HeapAlloc(1 << 20)
-			FreeAlloc(&buf)
+			MemPollAllocAll(pool,1 << 8)
+			MemPoolFreeAll(pool,1 << 8)
+		}
+		b.StopTimer()
+	})
+	b.Run("4096B-NativeAlloc", func(b *testing.B) {
+		b.ReportAllocs()
+		b.StartTimer()
+		rand.Seed(time.Now().UnixNano())
+		for i := 0; i < b.N; i++ {
+			buf := HeapAlloc(1 << 12)
+			if rand.Intn(10) + 1 > 5 {
+				FreeAlloc(&buf)
+			}
+		}
+		b.StopTimer()
+	})
+	b.Run("4096B-NativeAllocAll", func(b *testing.B) {
+		b.ReportAllocs()
+		b.StartTimer()
+		const allocN = 1 << 8
+		allocMap := [allocN][]byte{}
+		for i := 0; i < b.N; i++ {
+			for i := 0; i < allocN; i++ {
+				allocMap[i] = HeapAlloc(4096)
+			}
+			for i := 0; i < allocN; i++ {
+				FreeAlloc(&allocMap[i])
+			}
+		}
+	})
+	b.Run("4096B-SyncPoolAlloc", func(b *testing.B) {
+		b.ReportAllocs()
+		pool := sync.Pool{
+			New: func() interface{} {
+				return make([]byte,4096)
+			},
+		}
+		rand.Seed(time.Now().UnixNano())
+		for i := 0; i < b.N; i++ {
+			buf := pool.Get().([]byte)
+			if rand.Intn(10) + 1 > 5 {
+				pool.Put(buf)
+			}
 		}
 	})
 }
@@ -73,4 +120,21 @@ func FreeAlloc(ptr *[]byte) {
 	header.Data = 0
 	header.Len = 0
 	header.Cap = 0
+}
+
+func MemPollAllocAll(pool *BufferPool,allocN int) {
+	for i := 0; i < allocN; i++ {
+		pool.AllocBuffer(1)
+	}
+}
+
+func MemPoolFreeAll(pool *BufferPool,allocN int) {
+	for i := 0; i < allocN; i++ {
+		slice := &reflect.SliceHeader{
+			Data: (*reflect.SliceHeader)(unsafe.Pointer(pool.pool)).Data + uintptr(i * int(pool.block)),
+			Len:  0,
+			Cap: int(pool.block),
+		}
+		pool.FreeBuffer((*[]byte)(unsafe.Pointer(slice)))
+	}
 }
