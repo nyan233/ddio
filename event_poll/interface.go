@@ -78,5 +78,6 @@ type Balanced interface {
 	Name() string
 	// Target 输入的Seek为ConnectionEventHandler的数量
 	// 负载均衡器需要给出一个正确的目标
-	Target(seek int) int
+	// connLen为子Reactor的数量，fd表示新接收连接的文件描述符的值
+	Target(connLen,fd int) int
 }
