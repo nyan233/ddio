@@ -19,4 +19,8 @@ const (
 var (
 	ErrorEpollClosed = errors.New("epoll is closed")
 	ErrRead = errors.New("read error: ")
+	ErrWrite = errors.New("write error: ")
 )
+
+// NewBalance 派生负载均衡器的工厂方法
+type NewBalance func() Balanced
