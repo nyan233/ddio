@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"github.com/zbh255/nyan/event_poll"
 	"net"
-	"net/http"
-	_ "net/http/pprof"
 	"time"
 )
 
@@ -30,10 +28,12 @@ func (s *SimpleHttpEchoServer) OnError(ev ddio.Event, err error) {
 }
 
 func main() {
-	config := &ddio.DisPatcherConfig{
+	config := &ddio.EngineConfig{
 		ConnHandler:    &SimpleHttpEchoServer{},
-		Balanced: &ddio.RoundBalanced{},
-		EngineConfig: &ddio.NetPollConfig{
+		NBalance: func() ddio.Balanced {
+			return &ddio.RoundBalanced{}
+		},
+		NetPollConfig: &ddio.NetPollConfig{
 			Protocol: 0x1,
 			IP: net.ParseIP("192.168.1.150"),
 			Port: 8080,
@@ -43,7 +43,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	_ = http.ListenAndServe("0.0.0.0:9090", nil)
 	engine.Run()
 	_ = engine.Close()
 }
