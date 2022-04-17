@@ -10,17 +10,21 @@ type Engine struct {
 	config *NetPollConfig
 }
 
-func NewEngine(handler ListenerEventHandler,config *DisPatcherConfig) (*Engine,error) {
+func NewEngine(handler ListenerEventHandler,config *EngineConfig) (*Engine,error) {
 	engine := &Engine{}
 	engine.mds = make([]*ListenerMultiEventDispatcher,runtime.NumCPU())
 	for k := range engine.mds {
-		tmp, err := NewListenerMultiEventDispatcher(handler,config)
+		tmp, err := NewListenerMultiEventDispatcher(handler,&ListenerConfig{
+			ConnEHd:       config.ConnHandler,
+			Balance:       config.NBalance(),
+			NetPollConfig: config.NetPollConfig,
+		})
 		if err != nil {
 			return nil,err
 		}
 		engine.mds[k] = tmp
 	}
-	engine.config = config.EngineConfig
+	engine.config = config.NetPollConfig
 	return engine,nil
 }
 

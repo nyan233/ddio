@@ -18,15 +18,15 @@ type ListenerMultiEventDispatcher struct {
 	// 完成通知
 	done chan struct{}
 	// 一些主多路事件派发器的配置
-	config *DisPatcherConfig
+	config *ListenerConfig
 }
 
-func NewListenerMultiEventDispatcher(handler ListenerEventHandler,config *DisPatcherConfig) (*ListenerMultiEventDispatcher,error) {
+func NewListenerMultiEventDispatcher(handler ListenerEventHandler,config *ListenerConfig) (*ListenerMultiEventDispatcher,error) {
 	lmed := &ListenerMultiEventDispatcher{}
 	// 启动绑定的从多路事件派发器
 	connMds := make([]*ConnMultiEventDispatcher,runtime.NumCPU())
 	for i := 0; i < len(connMds);i++ {
-		tmp, err := NewConnMultiEventDispatcher(config.ConnHandler)
+		tmp, err := NewConnMultiEventDispatcher(config.ConnEHd)
 		if err != nil {
 			return nil, err
 		}
@@ -41,7 +41,7 @@ func NewListenerMultiEventDispatcher(handler ListenerEventHandler,config *DisPat
 		return nil,err
 	}
 	lmed.poll = poller
-	initEvent, err := lmed.handler.OnInit(config.EngineConfig)
+	initEvent, err := lmed.handler.OnInit(config.NetPollConfig)
 	if err != nil {
 		return nil,err
 	}
@@ -89,9 +89,9 @@ func (l *ListenerMultiEventDispatcher) openLoop() {
 		}
 		connEvent := &Event{
 			sysFd: int32(connFd),
-			event: EVENT_READ,
+			event: EVENT_READ | EVENT_CLOSE,
 		}
-		n := l.config.Balanced.Target(len(l.connMds))
+		n := l.config.Balance.Target(len(l.connMds),connFd)
 		err = l.connMds[n].AddConnEvent(connEvent)
 		if err != nil {
 			logger.ErrorFromString("add connection event error : " + err.Error())

@@ -1,6 +1,7 @@
 package ddio
 
 import (
+	"errors"
 	ch "github.com/zbh255/nyan/event_poll/internal/conn_handler"
 	"sync/atomic"
 	"syscall"
@@ -18,6 +19,10 @@ type ConnMultiEventDispatcher struct {
 	poll EventLoop
 	closed uint64
 	done chan struct{}
+	// 最多在事件循环中尝试读取的次数
+	maxReadNumberOnEventLoop int
+	// 最多在事件循环中尝试写入的次数
+	maxWriteNumberOnEventLoop int
 	// Block Number == 8192
 	// Block Size == 4096 Byte
 	bufferPool *BufferPool
@@ -31,6 +36,8 @@ func NewConnMultiEventDispatcher(handler ConnectionEventHandler) (*ConnMultiEven
 		logger.ErrorFromErr(err)
 		return nil,err
 	}
+	cmed.maxReadNumberOnEventLoop = 1024
+	cmed.maxWriteNumberOnEventLoop = 1024
 	cmed.poll = poller
 	// buffer pool
 	cmed.bufferPool = NewBufferPool(12,13)
@@ -70,6 +77,7 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 			return
 		}
 		events, err := p.poll.Exec(ONCE_MAX_EVENTS,time.Duration((time.Second * 2).Milliseconds()))
+		//events, err := p.poll.Exec(ONCE_MAX_EVENTS,-1)
 		if len(events) == 0 {
 			continue
 		}
@@ -77,185 +85,96 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 			break
 		}
 		// TODO: 暂时没有找到处理慢连接的好方法
-		// 没有读取完数据的套接字map
-		readyRSockets := make(map[int]*TCPConn,len(events))
-		// 此次被触发的写就绪的Socket
-		readyWSockets := make(map[int]*TCPConn,len(events))
-		// 遍历所有就绪的Events
-		// 由于Epoll使用的是ET的触发模式，所以这是初次处理
 		for _,v := range events {
-			// 检查触发的事件类型
-			// 触发写事件则写入数据
-			if v.Flags() & EVENT_WRITE == EVENT_WRITE {
-				conn,ok := writeConns[int(v.fd())]
-				if !ok {
-					logger.PanicFromString("register write event is not save")
-				}
-				bc := &ch.BeforeConnHandler{}
-				writeN, err := bc.NioWrite(conn.rawFd, conn.wBytes)
-				if err != syscall.EAGAIN && err != nil {
-					logger.ErrorFromErr(err)
-					continue
-				}
-				conn.wBytes = conn.wBytes[writeN:]
-				// 检查有无写完写缓冲区
-				if len(conn.wBytes) == 0 {
-					p.bufferPool.FreeBuffer(&conn.wBytes)
-					conn.wBytes = nil
-					delete(writeConns,conn.rawFd)
-					// 写完则重新注册读事件
-					err = p.poll.Modify(&Event{
-						sysFd: v.fd(),
-						event: EVENT_READ,
-					})
-					if err != nil {
-						logger.ErrorFromErr(err)
-						return
-					}
-				} else {
-					readyWSockets[conn.rawFd] = conn
-				}
-				continue
-			}
-			// 池没有空余空间的时候则重新分配
-			buffer,ok := p.bufferPool.AllocBuffer(1)
-			if !ok {
-				buffer = make([]byte,BUFFER_SIZE)
-			}
-			buffer = buffer[:cap(buffer)]
 			bc := &ch.BeforeConnHandler{}
-			readN, err := bc.NioRead(int(v.fd()), buffer)
 			switch {
-			case err == syscall.EAGAIN:
-				readyRSockets[int(v.fd())] = &TCPConn{
-					rawFd:   int(v.fd()),
-					rBytes:  buffer[:readN],
-					wBytes:  nil,
-					memPool: p.bufferPool,
-				}
-				break
-			case err == nil:
-				wBytes,ok := p.bufferPool.AllocBuffer(1)
-				if !ok {
-					wBytes = make([]byte,BUFFER_SIZE)
-				}
+			case v.Flags() & EVENT_READ == EVENT_READ:
+				buffer := make([]byte,BUFFER_SIZE)
+				buffer = buffer[:cap(buffer)]
 				tcpConn := &TCPConn{
 					rawFd: int(v.fd()),
-					rBytes:  buffer[:readN],
-					wBytes:  wBytes,
 					memPool: p.bufferPool,
 				}
-				err := p.handler.OnData(tcpConn)
-				if err != nil {
-					logger.ErrorFromErr(err)
-					logger.ErrorFromErr(p.handler.OnClose(v))
+				bufferReadN := 0
+				for i := 0; i < p.maxReadNumberOnEventLoop;i++ {
+					readN, err := bc.NioRead(tcpConn.rawFd, buffer[bufferReadN:])
+					bufferReadN += readN
+					if err == syscall.EAGAIN || err == nil{
+						tcpConn.rBytes = buffer[:bufferReadN]
+						// 分配写缓冲区
+						wBytes := make([]byte,0,BUFFER_SIZE)
+						tcpConn.wBytes = wBytes
+						err := p.handler.OnData(tcpConn)
+						if err != nil {
+							p.handler.OnError(v,errors.New("OnData error: " + err.Error()))
+							break
+						}
+						// 释放读缓冲
+						tcpConn.rBytes = nil
+						// 注册写事件
+						err = p.poll.Modify(&Event{
+							sysFd: v.fd(),
+							event: EVENT_WRITE | EVENT_CLOSE,
+						})
+						if err != nil {
+							p.handler.OnError(Event{
+								sysFd: v.fd(),
+								event: EVENT_WRITE | EVENT_CLOSE,
+							},err)
+							break
+						}
+						writeConns[tcpConn.rawFd] = tcpConn
+						break
+					} else if err == syscall.EINTR {
+						// 检查缓存区大小，容量满则扩容
+						if !(len(buffer) == cap(buffer)) {
+							continue
+						}
+						buffer = append(buffer,[]byte{0,0,0,0,0}...)
+						continue
+					} else if err != nil {
+						p.handler.OnError(v,ErrRead)
+						break
+					}
 				}
-				// 释放读缓冲区
-				p.bufferPool.FreeBuffer(&buffer)
-				// 将注册的读事件修改为写事件
-				err = p.poll.Modify(&Event{
-					sysFd: v.fd(),
-					event: EVENT_WRITE,
-				})
-				if err != nil {
-					return
-				}
-				writeConns[tcpConn.rawFd] = tcpConn
-			default:
-				p.handler.OnError(v,err)
-			}
-		}
-		// 遍历处理所有未读取完的Socket
-		for len(readyRSockets) != 0 && len(readyWSockets) != 0 {
-			for _,conn := range readyWSockets {
-				bc := &ch.BeforeConnHandler{}
-				writeN, err := bc.NioWrite(conn.rawFd, conn.wBytes)
-				if err != syscall.EAGAIN && err != nil {
-					logger.ErrorFromErr(err)
+			case v.Flags() & EVENT_WRITE == EVENT_WRITE:
+				tcpConn,ok := writeConns[int(v.fd())]
+				if !ok {
+					logger.ErrorFromErr(errors.New("write event not register"))
 					continue
 				}
-				conn.wBytes = conn.wBytes[writeN:]
-				// 检查有无写完写缓冲区
-				if len(conn.wBytes) == 0 {
-					p.bufferPool.FreeBuffer(&conn.wBytes)
-					conn.wBytes = nil
-					delete(writeConns,conn.rawFd)
-					delete(readyWSockets,conn.rawFd)
-					// 写完则重新注册读事件
-					err := p.poll.Modify(&Event{
-						sysFd: int32(conn.rawFd),
-						event: EVENT_READ,
-					})
-					if err != nil {
+				for i := 0; i < p.maxWriteNumberOnEventLoop;i++ {
+					writeN, err := bc.NioWrite(tcpConn.rawFd, tcpConn.wBytes)
+					tcpConn.wBytes = tcpConn.wBytes[writeN:]
+					if err != nil && err != syscall.EAGAIN {
 						logger.ErrorFromErr(err)
-						return
+						p.handler.OnError(v,ErrWrite)
+						break
+					}
+					// 写完
+					if len(tcpConn.wBytes) == 0 {
+						break
 					}
 				}
-			}
-			for k,v := range readyRSockets {
-				// 读缓冲区满则扩容
-				if len(v.rBytes) == cap(v.rBytes) {
-					ok := p.bufferPool.Grow(&v.rBytes,(cap(v.rBytes)/int(p.bufferPool.block)) * 2)
-					// 缓冲区没有空余的内存则需重新分配
-					if !ok {
-						oldLen := len(v.rBytes)
-						v.rBytes = append(v.rBytes,[]byte{0,0,0,0,0}...)
-						v.rBytes = v.rBytes[:oldLen]
-					}
-				}
-				bc := &ch.BeforeConnHandler{}
-				readN, err := bc.NioRead(k, v.rBytes[len(v.rBytes):])
-				switch {
-				case err == nil:
-					// 分配写缓冲区
-					wBytes,ok := p.bufferPool.AllocBuffer(1)
-					if !ok {
-						wBytes = make([]byte,BUFFER_SIZE)
-					}
-					v.wBytes = wBytes
-					if err := p.handler.OnData(v);err != nil {
-						logger.ErrorFromErr(err)
-						p.handler.OnError(Event{
-							sysFd: int32(k),
-							event: 0,
-						},err)
-					}
-					// 释放读缓冲区
-					p.bufferPool.FreeBuffer(&v.rBytes)
-					v.rBytes = nil
-					// 删除记录的等待读取的Conn
-					delete(readyRSockets,k)
-					// 将注册的读事件修改为写事件
-					err = p.poll.Modify(&Event{
-						sysFd: int32(v.rawFd),
-						event: EVENT_WRITE,
-					})
-					if err != nil {
-						logger.ErrorFromErr(err)
-						return
-					}
-					// 记录写事件
-					writeConns[k] = v
-				case err == syscall.EAGAIN:
-					v.rBytes = v.rBytes[:len(v.rBytes) + readN]
-					break
-				default:
-					// 释放读缓冲区
-					p.bufferPool.FreeBuffer(&v.rBytes)
-					// 触发用户注册的用于处理错误的方法
+				// 重新注册读事件
+				err := p.poll.Modify(&Event{
+					sysFd: v.fd(),
+					event: EVENT_READ | EVENT_CLOSE,
+				})
+				if err != nil {
 					p.handler.OnError(Event{
-						sysFd: int32(k),
-						event: 0,
+						sysFd: v.fd(),
+						event: EVENT_READ | EVENT_CLOSE,
 					},err)
-					// 在等待读取的Conn中删除此连接
-					delete(readyRSockets,k)
-					break
 				}
+				// 不管出不出错都释放写缓冲区和记录写map key
+				tcpConn.wBytes = nil
+				delete(writeConns,tcpConn.rawFd)
+			case v.Flags() & EVENT_CLOSE == EVENT_CLOSE:
+				logger.Debug("client closed")
+				_ = syscall.Close(int(v.fd()))
+				break
 			}
 		}
-		//// 处理所有待写入的Socket Conn
-		//for len(readyWSockets) != 0 {
-		//
-		//}
 	}
 }
