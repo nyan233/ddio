@@ -3,14 +3,16 @@ package ddio
 import (
 	"errors"
 	ch "github.com/zbh255/nyan/event_poll/internal/conn_handler"
+	"reflect"
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unsafe"
 )
 
 const (
 	ONCE_MAX_EVENTS = 256
-	BUFFER_SIZE = 512
+	BUFFER_SIZE = 4096
 )
 
 // ConnMultiEventDispatcher 从多路事件派发器
@@ -25,7 +27,24 @@ type ConnMultiEventDispatcher struct {
 	maxWriteNumberOnEventLoop int
 	// Block Number == 8192
 	// Block Size == 4096 Byte
-	bufferPool *BufferPool
+	/*
+		从Reactor除了添加和删除事件之外和其他的goroutine
+		之间并没有竞争，Http Server不涉及业务，应该不会将报文传递给其它goroutine
+		所以，一些数据结构可以在栈本地直接分配，这样也是性能最高的。
+		goroutine 栈最大可达1GB，所以一次为256个请求分配报文应该没有问题
+	*/
+	//memPool *MemoryPool
+	//bufferPool *sync.Pool
+
+}
+
+// 对复用[]byte的一些描述
+type bufferElem struct {
+	buf []byte
+}
+
+func (b *bufferElem) Reset()  {
+	b.buf = b.buf[:0]
 }
 
 func NewConnMultiEventDispatcher(handler ConnectionEventHandler) (*ConnMultiEventDispatcher,error) {
@@ -39,15 +58,23 @@ func NewConnMultiEventDispatcher(handler ConnectionEventHandler) (*ConnMultiEven
 	cmed.maxReadNumberOnEventLoop = 1024
 	cmed.maxWriteNumberOnEventLoop = 1024
 	cmed.poll = poller
-	// buffer pool
-	cmed.bufferPool = NewBufferPool(12,13)
+	// memory pool
+	//cmed.memPool = NewBufferPool(12, int(math.Log2(ONCE_MAX_EVENTS)))
+	//// buffer pool
+	//cmed.bufferPool = &sync.Pool{
+	//	New: func() interface{} {
+	//		return &bufferElem{
+	//			buf: make([]byte,BUFFER_SIZE),
+	//		}
+	//	},
+	//}
 	// open event loop
 	go cmed.openLoop()
 	return cmed,nil
 }
 
 func (p *ConnMultiEventDispatcher) AddConnEvent(ev *Event) error {
-	err := p.poll.With(ev)
+	err := p.poll.With(*ev)
 	if err != nil {
 		return err
 	}
@@ -70,7 +97,8 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 		p.done <- struct{}{}
 	}()
 	// 记录的待写入的Conn
-	writeConns := make(map[int]*TCPConn,ONCE_MAX_EVENTS)
+	// 使用TCPConn而不使用*TCPConn的原因是防止对象逃逸
+	writeConns := make(map[int]TCPConn,ONCE_MAX_EVENTS)
 	for {
 		// 检测关闭信号
 		if atomic.LoadUint64(&p.closed) == 1 {
@@ -89,21 +117,34 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 			bc := &ch.BeforeConnHandler{}
 			switch {
 			case v.Flags() & EVENT_READ == EVENT_READ:
-				buffer := make([]byte,BUFFER_SIZE)
-				buffer = buffer[:cap(buffer)]
-				tcpConn := &TCPConn{
+				var bufferTmp [BUFFER_SIZE]byte
+				var buffer []byte
+				buffer = *(*[]byte)(noescape(unsafe.Pointer(&reflect.SliceHeader{
+					Data: uintptr(noescape(unsafe.Pointer(&bufferTmp))),
+					Len:  BUFFER_SIZE,
+					Cap:  BUFFER_SIZE,
+				})))
+				//buffer = buffer[:cap(buffer)]
+				var tcpConn *TCPConn
+				tcpConn = (*TCPConn)(noescape(unsafe.Pointer(&TCPConn{
 					rawFd: int(v.fd()),
-					memPool: p.bufferPool,
-				}
+				})))
 				bufferReadN := 0
 				for i := 0; i < p.maxReadNumberOnEventLoop;i++ {
 					readN, err := bc.NioRead(tcpConn.rawFd, buffer[bufferReadN:])
 					bufferReadN += readN
 					if err == syscall.EAGAIN || err == nil{
-						tcpConn.rBytes = buffer[:bufferReadN]
+						tcpConn.rBytes = buffer
+						tcpConn.rBytes = tcpConn.rBytes[:bufferReadN]
 						// 分配写缓冲区
-						wBytes := make([]byte,0,BUFFER_SIZE)
-						tcpConn.wBytes = wBytes
+						var wBufferTmp [BUFFER_SIZE] byte
+						var wBuffer []byte
+						wBuffer = *(*[]byte)(noescape(unsafe.Pointer(&reflect.SliceHeader{
+							Data: uintptr(noescape(unsafe.Pointer(&wBufferTmp))),
+							Len:  BUFFER_SIZE,
+							Cap:  BUFFER_SIZE,
+						})))
+						tcpConn.wBytes = wBuffer[:0]
 						err := p.handler.OnData(tcpConn)
 						if err != nil {
 							p.handler.OnError(v,errors.New("OnData error: " + err.Error()))
@@ -112,25 +153,16 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 						// 释放读缓冲
 						tcpConn.rBytes = nil
 						// 注册写事件
-						err = p.poll.Modify(&Event{
-							sysFd: v.fd(),
-							event: EVENT_WRITE | EVENT_CLOSE,
-						})
-						if err != nil {
-							p.handler.OnError(Event{
-								sysFd: v.fd(),
-								event: EVENT_WRITE | EVENT_CLOSE,
-							},err)
-							break
-						}
-						writeConns[tcpConn.rawFd] = tcpConn
+						p.modWrite(v)
+						writeConns[tcpConn.rawFd] = *tcpConn
 						break
 					} else if err == syscall.EINTR {
 						// 检查缓存区大小，容量满则扩容
 						if !(len(buffer) == cap(buffer)) {
 							continue
 						}
-						buffer = append(buffer,[]byte{0,0,0,0,0}...)
+						buffer := append(buffer,[]byte{0,0,0,0,0}...)
+						buffer = buffer[:cap(buffer)]
 						continue
 					} else if err != nil {
 						p.handler.OnError(v,ErrRead)
@@ -157,16 +189,7 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 					}
 				}
 				// 重新注册读事件
-				err := p.poll.Modify(&Event{
-					sysFd: v.fd(),
-					event: EVENT_READ | EVENT_CLOSE,
-				})
-				if err != nil {
-					p.handler.OnError(Event{
-						sysFd: v.fd(),
-						event: EVENT_READ | EVENT_CLOSE,
-					},err)
-				}
+				p.modRead(v)
 				// 不管出不出错都释放写缓冲区和记录写map key
 				tcpConn.wBytes = nil
 				delete(writeConns,tcpConn.rawFd)
@@ -174,7 +197,37 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 				logger.Debug("client closed")
 				_ = syscall.Close(int(v.fd()))
 				break
+			case v.Flags() & EVENT_ERROR == EVENT_ERROR:
+				logger.Debug("connection error")
+				_ = syscall.Close(int(v.fd()))
+				break
 			}
 		}
+	}
+}
+
+func (p *ConnMultiEventDispatcher) modRead(ev Event) {
+	err := p.poll.Modify(Event{
+		sysFd: ev.fd(),
+		event: EVENT_READ | EVENT_CLOSE | EVENT_ERROR,
+	})
+	if err != nil {
+		p.handler.OnError(Event{
+			sysFd: ev.fd(),
+			event: EVENT_READ | EVENT_CLOSE | EVENT_ERROR,
+		},err)
+	}
+}
+
+func (p *ConnMultiEventDispatcher) modWrite(ev Event) {
+	err := p.poll.Modify(Event{
+		sysFd: ev.fd(),
+		event: EVENT_WRITE | EVENT_CLOSE | EVENT_ERROR,
+	})
+	if err != nil {
+		p.handler.OnError(Event{
+			sysFd: ev.fd(),
+			event: EVENT_WRITE | EVENT_CLOSE | EVENT_ERROR,
+		},err)
 	}
 }
