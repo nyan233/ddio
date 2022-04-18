@@ -1,9 +1,7 @@
 //go:build darwin || openbsd || freebsd
 package ddio
 
-import (
-	"time"
-)
+import "time"
 
 type poller struct {
 	*kqueue
@@ -13,7 +11,7 @@ func NewPoller() (*poller,error) {
 	return nil,nil
 }
 
-func (p poller) Exec(maxEvent int, timeOut time.Duration) ([]Event, error) {
+func (p poller) Exec(receiver []Event, timeOut time.Duration) (nEvent int, err error) {
 	panic("implement me")
 }
 

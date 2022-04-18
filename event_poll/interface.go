@@ -37,7 +37,11 @@ type ListenerEventHandler interface {
 // EventLoop 事件循环要实现的接口
 type EventLoop interface {
 	// Exec 开启事件循环
-	Exec(maxEvent int,timeOut time.Duration) ([]Event,error)
+	// 参数的一些要求，否则可能会出现索引越界等异常
+	// Receiver Cap >= maxEvent
+	// 各底层Poller最多支持一次性处理 MAX_POLLER_ONCE_EVENTS 个事件
+	// nEvent代表发生了多少个事件，如果有错误它为0，同时err != nil
+	Exec(receiver []Event, timeOut time.Duration) (nEvent int,err error)
 
 	// Exit 退出事件循环
 	Exit() error
