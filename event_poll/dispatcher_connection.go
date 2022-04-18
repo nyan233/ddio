@@ -12,15 +12,15 @@ import (
 
 const (
 	ONCE_MAX_EVENTS = 256
-	BUFFER_SIZE = 4096
+	BUFFER_SIZE     = 4096
 )
 
 // ConnMultiEventDispatcher 从多路事件派发器
 type ConnMultiEventDispatcher struct {
 	handler ConnectionEventHandler
-	poll EventLoop
-	closed uint64
-	done chan struct{}
+	poll    EventLoop
+	closed  uint64
+	done    chan struct{}
 	// 最多在事件循环中尝试读取的次数
 	maxReadNumberOnEventLoop int
 	// 最多在事件循环中尝试写入的次数
@@ -43,17 +43,17 @@ type bufferElem struct {
 	buf []byte
 }
 
-func (b *bufferElem) Reset()  {
+func (b *bufferElem) Reset() {
 	b.buf = b.buf[:0]
 }
 
-func NewConnMultiEventDispatcher(handler ConnectionEventHandler) (*ConnMultiEventDispatcher,error) {
+func NewConnMultiEventDispatcher(handler ConnectionEventHandler) (*ConnMultiEventDispatcher, error) {
 	cmed := &ConnMultiEventDispatcher{}
 	cmed.handler = handler
-	poller,err := NewPoller()
+	poller, err := NewPoller()
 	if err != nil {
 		logger.ErrorFromErr(err)
-		return nil,err
+		return nil, err
 	}
 	cmed.maxReadNumberOnEventLoop = 1024
 	cmed.maxWriteNumberOnEventLoop = 1024
@@ -70,7 +70,7 @@ func NewConnMultiEventDispatcher(handler ConnectionEventHandler) (*ConnMultiEven
 	//}
 	// open event loop
 	go cmed.openLoop()
-	return cmed,nil
+	return cmed, nil
 }
 
 func (p *ConnMultiEventDispatcher) AddConnEvent(ev *Event) error {
@@ -82,13 +82,13 @@ func (p *ConnMultiEventDispatcher) AddConnEvent(ev *Event) error {
 }
 
 func (p *ConnMultiEventDispatcher) Close() {
-	if !atomic.CompareAndSwapUint64(&p.closed,0,1) {
+	if !atomic.CompareAndSwapUint64(&p.closed, 0, 1) {
 		// 不允许重复关闭
 		return
 	}
 	<-p.done
-	for _,v := range p.poll.AllEvents() {
-		p.handler.OnError(v,ErrorEpollClosed)
+	for _, v := range p.poll.AllEvents() {
+		p.handler.OnError(v, ErrorEpollClosed)
 	}
 }
 
@@ -98,14 +98,14 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 	}()
 	// 记录的待写入的Conn
 	// 使用TCPConn而不使用*TCPConn的原因是防止对象逃逸
-	writeConns := make(map[int]TCPConn,ONCE_MAX_EVENTS)
-	receiver := make([]Event,ONCE_MAX_EVENTS)
+	writeConns := make(map[int]TCPConn, ONCE_MAX_EVENTS)
+	receiver := make([]Event, ONCE_MAX_EVENTS)
 	for {
 		// 检测关闭信号
 		if atomic.LoadUint64(&p.closed) == 1 {
 			return
 		}
-		nEvent, err := p.poll.Exec(receiver,time.Duration((time.Second * 2).Milliseconds()))
+		nEvent, err := p.poll.Exec(receiver, time.Duration((time.Second * 2).Milliseconds()))
 		//events, err := p.poll.Exec(ONCE_MAX_EVENTS,-1)
 		if nEvent == 0 {
 			continue
@@ -115,10 +115,10 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 		}
 		events := receiver[:nEvent]
 		// TODO: 暂时没有找到处理慢连接的好方法
-		for _,v := range events {
+		for _, v := range events {
 			bc := &ch.BeforeConnHandler{}
 			switch {
-			case v.Flags() & EVENT_READ == EVENT_READ:
+			case v.Flags()&EVENT_READ == EVENT_READ:
 				var bufferTmp [BUFFER_SIZE]byte
 				var buffer []byte
 				buffer = *(*[]byte)(noescape(unsafe.Pointer(&reflect.SliceHeader{
@@ -132,14 +132,14 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 					rawFd: int(v.fd()),
 				})))
 				bufferReadN := 0
-				for i := 0; i < p.maxReadNumberOnEventLoop;i++ {
+				for i := 0; i < p.maxReadNumberOnEventLoop; i++ {
 					readN, err := bc.NioRead(tcpConn.rawFd, buffer[bufferReadN:])
 					bufferReadN += readN
-					if err == syscall.EAGAIN || err == nil{
+					if err == syscall.EAGAIN || err == nil {
 						tcpConn.rBytes = buffer
 						tcpConn.rBytes = tcpConn.rBytes[:bufferReadN]
 						// 分配写缓冲区
-						var wBufferTmp [BUFFER_SIZE] byte
+						var wBufferTmp [BUFFER_SIZE]byte
 						var wBuffer []byte
 						wBuffer = *(*[]byte)(noescape(unsafe.Pointer(&reflect.SliceHeader{
 							Data: uintptr(noescape(unsafe.Pointer(&wBufferTmp))),
@@ -149,7 +149,7 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 						tcpConn.wBytes = wBuffer[:0]
 						err := p.handler.OnData(tcpConn)
 						if err != nil {
-							p.handler.OnError(v,errors.New("OnData error: " + err.Error()))
+							p.handler.OnError(v, errors.New("OnData error: "+err.Error()))
 							break
 						}
 						// 释放读缓冲
@@ -163,26 +163,26 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 						if !(len(buffer) == cap(buffer)) {
 							continue
 						}
-						buffer := append(buffer,[]byte{0,0,0,0,0}...)
+						buffer := append(buffer, []byte{0, 0, 0, 0, 0}...)
 						buffer = buffer[:cap(buffer)]
 						continue
 					} else if err != nil {
-						p.handler.OnError(v,ErrRead)
+						p.handler.OnError(v, ErrRead)
 						break
 					}
 				}
-			case v.Flags() & EVENT_WRITE == EVENT_WRITE:
-				tcpConn,ok := writeConns[int(v.fd())]
+			case v.Flags()&EVENT_WRITE == EVENT_WRITE:
+				tcpConn, ok := writeConns[int(v.fd())]
 				if !ok {
 					logger.ErrorFromErr(errors.New("write event not register"))
 					continue
 				}
-				for i := 0; i < p.maxWriteNumberOnEventLoop;i++ {
+				for i := 0; i < p.maxWriteNumberOnEventLoop; i++ {
 					writeN, err := bc.NioWrite(tcpConn.rawFd, tcpConn.wBytes)
 					tcpConn.wBytes = tcpConn.wBytes[writeN:]
 					if err != nil && err != syscall.EAGAIN {
 						logger.ErrorFromErr(err)
-						p.handler.OnError(v,ErrWrite)
+						p.handler.OnError(v, ErrWrite)
 						break
 					}
 					// 写完
@@ -194,12 +194,12 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 				p.modRead(v)
 				// 不管出不出错都释放写缓冲区和记录写map key
 				tcpConn.wBytes = nil
-				delete(writeConns,tcpConn.rawFd)
-			case v.Flags() & EVENT_CLOSE == EVENT_CLOSE:
+				delete(writeConns, tcpConn.rawFd)
+			case v.Flags()&EVENT_CLOSE == EVENT_CLOSE:
 				logger.Debug("client closed")
 				_ = syscall.Close(int(v.fd()))
 				break
-			case v.Flags() & EVENT_ERROR == EVENT_ERROR:
+			case v.Flags()&EVENT_ERROR == EVENT_ERROR:
 				logger.Debug("connection error")
 				_ = syscall.Close(int(v.fd()))
 				break
@@ -217,7 +217,7 @@ func (p *ConnMultiEventDispatcher) modRead(ev Event) {
 		p.handler.OnError(Event{
 			sysFd: ev.fd(),
 			event: EVENT_READ | EVENT_CLOSE | EVENT_ERROR,
-		},err)
+		}, err)
 	}
 }
 
@@ -230,6 +230,6 @@ func (p *ConnMultiEventDispatcher) modWrite(ev Event) {
 		p.handler.OnError(Event{
 			sysFd: ev.fd(),
 			event: EVENT_WRITE | EVENT_CLOSE | EVENT_ERROR,
-		},err)
+		}, err)
 	}
 }

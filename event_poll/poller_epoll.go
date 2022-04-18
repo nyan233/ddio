@@ -37,7 +37,7 @@ func NewPoller() (*poller, error) {
 		&sync.Mutex{},
 		&sync.Pool{
 			New: func() interface{} {
-				return make([]unix.EpollEvent,ePOLL_ONCE_MAX_EVENT)
+				return make([]unix.EpollEvent, ePOLL_ONCE_MAX_EVENT)
 			},
 		},
 	}, nil

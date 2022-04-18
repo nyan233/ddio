@@ -27,14 +27,14 @@ type WorkerPool struct {
 	task chan func() error
 }
 
-func NewWorkerPool (idleSize,maxSize int, timeOut time.Duration,onErr func(err error)) *WorkerPool {
+func NewWorkerPool(idleSize, maxSize int, timeOut time.Duration, onErr func(err error)) *WorkerPool {
 	pool := &WorkerPool{
 		IdleSize: idleSize,
 		Timeout:  timeOut,
 		MaxSize:  maxSize,
 		OnError:  onErr,
-		ctx: context.Background(),
-		task: make(chan func() error,maxSize),
+		ctx:      context.Background(),
+		task:     make(chan func() error, maxSize),
 	}
 	// 等待所有空闲goroutine启动完成
 	var waitWg sync.WaitGroup
@@ -45,7 +45,7 @@ func NewWorkerPool (idleSize,maxSize int, timeOut time.Duration,onErr func(err e
 			waitWg.Done()
 			for {
 				select {
-				case fn := <- pool.task:
+				case fn := <-pool.task:
 					err := fn()
 					if err != nil {
 						pool.OnError(err)
@@ -60,21 +60,21 @@ func NewWorkerPool (idleSize,maxSize int, timeOut time.Duration,onErr func(err e
 	// open maxSize - idleSize goroutine
 	go func() {
 		for {
-			atomic.StoreUint64(&pool.count,0)
+			atomic.StoreUint64(&pool.count, 0)
 			time.Sleep(time.Second / 10)
 			if !(atomic.LoadUint64(&pool.count) >= 100) {
 				continue
 			}
-			atomic.StoreUint64(&pool.count,0)
+			atomic.StoreUint64(&pool.count, 0)
 			var wg sync.WaitGroup
-			ctx, cancelFn := context.WithTimeout(pool.ctx,pool.Timeout)
+			ctx, cancelFn := context.WithTimeout(pool.ctx, pool.Timeout)
 			wg.Add(maxSize - idleSize)
-			for i := 0; i < maxSize - idleSize; i++ {
+			for i := 0; i < maxSize-idleSize; i++ {
 				go func() {
 					defer wg.Done()
 					for {
 						select {
-						case fn := <- pool.task:
+						case fn := <-pool.task:
 							err := fn()
 							if err != nil {
 								pool.OnError(err)
@@ -94,6 +94,5 @@ func NewWorkerPool (idleSize,maxSize int, timeOut time.Duration,onErr func(err e
 
 func (p *WorkerPool) AddTask(fn func() error) {
 	p.task <- fn
-	atomic.AddUint64(&p.count,1)
+	atomic.AddUint64(&p.count, 1)
 }
-

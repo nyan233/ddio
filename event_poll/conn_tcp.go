@@ -13,8 +13,8 @@ type TCPConn struct {
 	// 读缓冲
 	rBytes []byte
 	// 写缓冲
-	wBytes []byte
-	hd ConnAfterCenterHandler
+	wBytes     []byte
+	hd         ConnAfterCenterHandler
 	nextNBlock int
 	// 告诉事件循环，用户代码已经将连接关闭
 	closed bool
@@ -56,7 +56,7 @@ func (T *TCPConn) GrowWriteBuffer(buf *[]byte, nCap int) {
 }
 
 func (T *TCPConn) WriteBytes(p []byte) {
-	T.wBytes = append(T.wBytes,p...)
+	T.wBytes = append(T.wBytes, p...)
 }
 
 func (T *TCPConn) RegisterAfterHandler(hd ConnAfterCenterHandler) {

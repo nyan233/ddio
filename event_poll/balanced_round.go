@@ -10,8 +10,7 @@ func (r *RoundBalanced) Name() string {
 	return "default-round"
 }
 
-func (r *RoundBalanced) Target(connLen,fd int) int {
-	atomic.AddInt64(&r.connNumber,1)
+func (r *RoundBalanced) Target(connLen, fd int) int {
+	atomic.AddInt64(&r.connNumber, 1)
 	return fd % connLen
 }
-

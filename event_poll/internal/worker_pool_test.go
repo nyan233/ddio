@@ -12,7 +12,7 @@ func TestWorkerPool(t *testing.T) {
 	onErr := func(err error) {
 		t.Error(err)
 	}
-	pool := NewWorkerPool(1200,1500,time.Minute,onErr)
+	pool := NewWorkerPool(1200, 1500, time.Minute, onErr)
 	var wg sync.WaitGroup
 	wg.Add(10000)
 	mu := sync.Mutex{}
@@ -42,7 +42,7 @@ func BenchmarkTask(b *testing.B) {
 		onErr := func(err error) {
 			fmt.Println(err)
 		}
-		pool := NewWorkerPool(80,160,time.Minute,onErr)
+		pool := NewWorkerPool(80, 160, time.Minute, onErr)
 		for i := 0; i < b.N; i++ {
 			useWorkerPool(pool)
 		}
@@ -55,7 +55,7 @@ func noPool() {
 	var count int64
 	for i := 0; i < 100000; i++ {
 		go func() {
-			atomic.AddInt64(&count,1)
+			atomic.AddInt64(&count, 1)
 			wg.Done()
 		}()
 	}
@@ -68,7 +68,7 @@ func useWorkerPool(pool *WorkerPool) {
 	var count int64
 	for i := 0; i < 100000; i++ {
 		pool.AddTask(func() error {
-			atomic.AddInt64(&count,1)
+			atomic.AddInt64(&count, 1)
 			wg.Done()
 			return nil
 		})

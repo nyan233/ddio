@@ -1,4 +1,5 @@
 //go:build linux
+
 package ddio
 
 import (
@@ -8,25 +9,24 @@ import (
 
 // Epoll Flags
 const (
-	EPOLLIN = unix.EPOLLIN
-	EPOLLET = unix.EPOLLET
+	EPOLLIN      = unix.EPOLLIN
+	EPOLLET      = unix.EPOLLET
 	EPOLLONESHOT = unix.EPOLLONESHOT
 )
-
 
 type epoll struct {
 	epfd int
 }
 
-func NewEpoll() (*epoll,error) {
+func NewEpoll() (*epoll, error) {
 	fd, err := unix.EpollCreate1(0)
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
 	ep := &epoll{
-		epfd:     fd,
+		epfd: fd,
 	}
-	return ep,nil
+	return ep, nil
 }
 
 func (e *epoll) AddEvent(ev *Event) error {
@@ -41,8 +41,8 @@ func (e *epoll) AddEvent(ev *Event) error {
 	return nil
 }
 
-func (e *epoll) Wait(events []unix.EpollEvent,msec time.Duration) (n int,err error) {
-	n, err = unix.EpollWait(e.epfd,events, int(msec))
+func (e *epoll) Wait(events []unix.EpollEvent, msec time.Duration) (n int, err error) {
+	n, err = unix.EpollWait(e.epfd, events, int(msec))
 	return
 }
 

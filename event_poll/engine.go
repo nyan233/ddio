@@ -10,30 +10,30 @@ type Engine struct {
 	config *NetPollConfig
 }
 
-func NewEngine(handler ListenerEventHandler,config *EngineConfig) (*Engine,error) {
+func NewEngine(handler ListenerEventHandler, config *EngineConfig) (*Engine, error) {
 	engine := &Engine{}
 	nMds := runtime.NumCPU()
 	if nMds > MAX_MASTER_LOOP_SIZE {
 		nMds = MAX_MASTER_LOOP_SIZE
 	}
-	engine.mds = make([]*ListenerMultiEventDispatcher,nMds)
+	engine.mds = make([]*ListenerMultiEventDispatcher, nMds)
 	for k := range engine.mds {
-		tmp, err := NewListenerMultiEventDispatcher(handler,&ListenerConfig{
+		tmp, err := NewListenerMultiEventDispatcher(handler, &ListenerConfig{
 			ConnEHd:       config.ConnHandler,
 			Balance:       config.NBalance(),
 			NetPollConfig: config.NetPollConfig,
 		})
 		if err != nil {
-			return nil,err
+			return nil, err
 		}
 		engine.mds[k] = tmp
 	}
 	engine.config = config.NetPollConfig
-	return engine,nil
+	return engine, nil
 }
 
 func (e *Engine) Close() error {
-	for _,v := range e.mds {
+	for _, v := range e.mds {
 		err := v.Close()
 		if err != nil {
 			return err
@@ -41,4 +41,3 @@ func (e *Engine) Close() error {
 	}
 	return nil
 }
-

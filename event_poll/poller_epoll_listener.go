@@ -19,7 +19,7 @@ func NewTCPListener(event EventFlags) *TCPListener {
 
 func (T *TCPListener) OnInit(config *NetPollConfig) (*Event, error) {
 	event := &Event{}
-	fd,err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM,0)
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -28,7 +28,7 @@ func (T *TCPListener) OnInit(config *NetPollConfig) (*Event, error) {
 		return nil, err
 	}
 	var addr [4]byte
-	copy(addr[:],config.IP.To4())
+	copy(addr[:], config.IP.To4())
 	err = unix.Bind(fd, &unix.SockaddrInet4{
 		Port: config.Port,
 		Addr: addr,
@@ -42,7 +42,7 @@ func (T *TCPListener) OnInit(config *NetPollConfig) (*Event, error) {
 	}
 	event.sysFd = int32(fd)
 	event.event = T.event
-	return event,nil
+	return event, nil
 }
 
 func (T *TCPListener) OnAccept(ev Event) (connFd int, err error) {
@@ -50,15 +50,14 @@ func (T *TCPListener) OnAccept(ev Event) (connFd int, err error) {
 	if err != nil {
 		return 0, err
 	}
-	err = unix.SetNonblock(connFd,true)
-	return connFd,err
+	err = unix.SetNonblock(connFd, true)
+	return connFd, err
 }
 
 func (T *TCPListener) OnClose(ev Event) error {
 	return unix.Close(int(ev.fd()))
 }
 
-func (T *TCPListener) OnError(ev Event,err error) {
-	logger.ErrorFromString(fmt.Sprintf("TcpListener On Error: %s",err))
+func (T *TCPListener) OnError(ev Event, err error) {
+	logger.ErrorFromString(fmt.Sprintf("TcpListener On Error: %s", err))
 }
-

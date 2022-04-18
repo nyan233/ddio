@@ -12,4 +12,3 @@ func (e Event) fd() int32 {
 func (e Event) Flags() EventFlags {
 	return e.event
 }
-

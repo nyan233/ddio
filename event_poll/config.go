@@ -4,13 +4,13 @@ import "net"
 
 type NetPollConfig struct {
 	Protocol int
-	IP   net.IP
-	Port int
+	IP       net.IP
+	Port     int
 }
 
 type ListenerConfig struct {
-	ConnEHd ConnectionEventHandler
-	Balance Balanced
+	ConnEHd       ConnectionEventHandler
+	Balance       Balanced
 	NetPollConfig *NetPollConfig
 }
 

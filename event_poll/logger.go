@@ -6,6 +6,6 @@ import (
 )
 
 var (
-	logger bilog.Logger = bilog.NewLogger(os.Stdout,bilog.PANIC,bilog.WithTimes(),bilog.WithCaller(),
-		bilog.WithTopBuffer(8),bilog.WithLowBuffer(2))
+	logger bilog.Logger = bilog.NewLogger(os.Stdout, bilog.PANIC, bilog.WithTimes(), bilog.WithCaller(),
+		bilog.WithTopBuffer(8), bilog.WithLowBuffer(2))
 )

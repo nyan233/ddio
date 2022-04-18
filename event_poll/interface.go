@@ -25,13 +25,13 @@ type ConnectionEventHandler interface {
 // ListenerEventHandler 监听事件处理器
 type ListenerEventHandler interface {
 	// OnInit 初始化监听者事件处理器时调用的方法
-	OnInit(config *NetPollConfig) (*Event,error)
+	OnInit(config *NetPollConfig) (*Event, error)
 	// OnAccept 有新连接到来时调用的方法
 	OnAccept(ev Event) (connFd int, err error)
 	// OnClose 客户端退出建立连接阶段调用的方法
 	OnClose(ev Event) error
 	// OnError 事件循环出错时调用的方法
-	OnError(ev Event,err error)
+	OnError(ev Event, err error)
 }
 
 // EventLoop 事件循环要实现的接口
@@ -41,7 +41,7 @@ type EventLoop interface {
 	// Receiver Cap >= maxEvent
 	// 各底层Poller最多支持一次性处理 MAX_POLLER_ONCE_EVENTS 个事件
 	// nEvent代表发生了多少个事件，如果有错误它为0，同时err != nil
-	Exec(receiver []Event, timeOut time.Duration) (nEvent int,err error)
+	Exec(receiver []Event, timeOut time.Duration) (nEvent int, err error)
 
 	// Exit 退出事件循环
 	Exit() error
@@ -58,7 +58,6 @@ type EventLoop interface {
 
 	// AllEvents 获取所有监听的事件
 	AllEvents() []Event
-
 }
 
 type Conn interface {
@@ -82,7 +81,6 @@ type Conn interface {
 	SetTimeout(timeout time.Duration) error
 }
 
-
 // Balanced 自定义负载均衡器的接口
 type Balanced interface {
 	// Name 负载均衡器的名字或者其算法名
@@ -90,5 +88,5 @@ type Balanced interface {
 	// Target 输入的Seek为ConnectionEventHandler的数量
 	// 负载均衡器需要给出一个正确的目标
 	// connLen为子Reactor的数量，fd表示新接收连接的文件描述符的值
-	Target(connLen,fd int) int
+	Target(connLen, fd int) int
 }
