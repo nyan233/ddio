@@ -99,19 +99,21 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 	// 记录的待写入的Conn
 	// 使用TCPConn而不使用*TCPConn的原因是防止对象逃逸
 	writeConns := make(map[int]TCPConn,ONCE_MAX_EVENTS)
+	receiver := make([]Event,ONCE_MAX_EVENTS)
 	for {
 		// 检测关闭信号
 		if atomic.LoadUint64(&p.closed) == 1 {
 			return
 		}
-		events, err := p.poll.Exec(ONCE_MAX_EVENTS,time.Duration((time.Second * 2).Milliseconds()))
+		nEvent, err := p.poll.Exec(receiver,time.Duration((time.Second * 2).Milliseconds()))
 		//events, err := p.poll.Exec(ONCE_MAX_EVENTS,-1)
-		if len(events) == 0 {
+		if nEvent == 0 {
 			continue
 		}
 		if err != syscall.EAGAIN && err != nil {
 			break
 		}
+		events := receiver[:nEvent]
 		// TODO: 暂时没有找到处理慢连接的好方法
 		for _,v := range events {
 			bc := &ch.BeforeConnHandler{}

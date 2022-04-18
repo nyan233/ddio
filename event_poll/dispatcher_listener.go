@@ -73,19 +73,20 @@ func (l *ListenerMultiEventDispatcher) Close() error {
 }
 
 func (l *ListenerMultiEventDispatcher) openLoop() {
+	receiver := make([]Event,1)
 	for {
 		if atomic.LoadUint64(&l.closed) == 1 {
 			l.done <- struct{}{}
 			return
 		}
-		events, err := l.poll.Exec(1, time.Duration((time.Second * 2).Milliseconds()))
-		if len(events) == 0 {
+		events, err := l.poll.Exec(receiver,time.Duration((time.Second * 2).Milliseconds()))
+		if events == 0 {
 			continue
 		}
 		if err != syscall.EAGAIN && err != nil {
 			break
 		}
-		event := events[0]
+		event := receiver[0]
 		connFd, err := l.handler.OnAccept(event)
 		if err != nil {
 			logger.ErrorFromString("accept error: " + err.Error())
