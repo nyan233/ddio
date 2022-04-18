@@ -12,7 +12,11 @@ type Engine struct {
 
 func NewEngine(handler ListenerEventHandler,config *EngineConfig) (*Engine,error) {
 	engine := &Engine{}
-	engine.mds = make([]*ListenerMultiEventDispatcher,runtime.NumCPU())
+	nMds := runtime.NumCPU()
+	if nMds > MAX_MASTER_LOOP_SIZE {
+		nMds = MAX_MASTER_LOOP_SIZE
+	}
+	engine.mds = make([]*ListenerMultiEventDispatcher,nMds)
 	for k := range engine.mds {
 		tmp, err := NewListenerMultiEventDispatcher(handler,&ListenerConfig{
 			ConnEHd:       config.ConnHandler,
@@ -38,6 +42,3 @@ func (e *Engine) Close() error {
 	return nil
 }
 
-func (* Engine) Run() {
-	select {}
-}

@@ -24,7 +24,11 @@ type ListenerMultiEventDispatcher struct {
 func NewListenerMultiEventDispatcher(handler ListenerEventHandler,config *ListenerConfig) (*ListenerMultiEventDispatcher,error) {
 	lmed := &ListenerMultiEventDispatcher{}
 	// 启动绑定的从多路事件派发器
-	connMds := make([]*ConnMultiEventDispatcher,runtime.NumCPU())
+	nMds := runtime.NumCPU()
+	if nMds > MAX_SLAVE_LOOP_SIZE {
+		nMds = MAX_SLAVE_LOOP_SIZE
+	}
+	connMds := make([]*ConnMultiEventDispatcher,nMds)
 	for i := 0; i < len(connMds);i++ {
 		tmp, err := NewConnMultiEventDispatcher(config.ConnEHd)
 		if err != nil {
@@ -45,7 +49,7 @@ func NewListenerMultiEventDispatcher(handler ListenerEventHandler,config *Listen
 	if err != nil {
 		return nil,err
 	}
-	err = lmed.poll.With(initEvent)
+	err = lmed.poll.With(*initEvent)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +93,7 @@ func (l *ListenerMultiEventDispatcher) openLoop() {
 		}
 		connEvent := &Event{
 			sysFd: int32(connFd),
-			event: EVENT_READ | EVENT_CLOSE,
+			event: EVENT_READ | EVENT_CLOSE | EVENT_ERROR,
 		}
 		n := l.config.Balance.Target(len(l.connMds),connFd)
 		err = l.connMds[n].AddConnEvent(connEvent)
