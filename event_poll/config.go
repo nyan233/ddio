@@ -22,3 +22,9 @@ type EngineConfig struct {
 	// 网络轮询器的配置
 	NetPollConfig *NetPollConfig
 }
+
+type ConnConfig struct {
+	// 触发OnData数据最多需要多少个Buffer Block
+	// 一个Block大小为4KB
+	OnDataNBlock int
+}
