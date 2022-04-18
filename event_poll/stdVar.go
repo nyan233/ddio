@@ -20,6 +20,8 @@ const (
 	MAX_MASTER_LOOP_SIZE = 32
 	// MAX_SLAVE_LOOP_SIZE 主Reactor绑定的负责处理连接事件的从Reactor的goroutine最大数量
 	MAX_SLAVE_LOOP_SIZE = 64
+	// MAX_POLLER_ONCE_EVENTS 各底层Poller一次最多响应的就绪事件
+	MAX_POLLER_ONCE_EVENTS = 1024
 )
 
 // 一些错误
