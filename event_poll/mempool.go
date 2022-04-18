@@ -23,7 +23,7 @@ const (
 // block 是块大小，会转换为2的N次方
 // size 是池能容纳的块数量,会转换为2的N次方
 // -1则使用默认配置
-func NewBufferPool(block, size int) *BufferPool {
+func NewBufferPool(block, size int) *MemoryPool {
 	if block >= 64 || size >= 64 {
 		return nil
 	} else if block == -1 || size == -1 {
@@ -35,7 +35,7 @@ func NewBufferPool(block, size int) *BufferPool {
 	}
 	heapSlice := make([]byte, size)
 
-	return &BufferPool{
+	return &MemoryPool{
 		block:    int32(block),
 		size:     int32(size),
 		pool:     &heapSlice,
@@ -43,7 +43,7 @@ func NewBufferPool(block, size int) *BufferPool {
 	}
 }
 
-type BufferPool struct {
+type MemoryPool struct {
 	mu sync.Mutex
 	// 初始化的Buffer内存池
 	// *[]byte使它更容易被gc回收
@@ -56,16 +56,16 @@ type BufferPool struct {
 	size int32
 }
 
-func (p *BufferPool) BlockSize() int {
+func (p *MemoryPool) BlockSize() int {
 	return int(p.block)
 }
 
-func (p *BufferPool) Size() int {
+func (p *MemoryPool) Size() int {
 	return int(p.size)
 }
 
 // AllocBuffer variable == n * 256
-func (p *BufferPool) AllocBuffer(n int) ([]byte, bool) {
+func (p *MemoryPool) AllocBuffer(n int) ([]byte, bool) {
 	if !checkN(n) {
 		return nil, false
 	}
@@ -131,7 +131,7 @@ func (p *BufferPool) AllocBuffer(n int) ([]byte, bool) {
 }
 
 // FreeBuffer 释放分配出去的Buffer内存
-func (p *BufferPool) FreeBuffer(ptr *[]byte) {
+func (p *MemoryPool) FreeBuffer(ptr *[]byte) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	header := (*reflect.SliceHeader)(unsafe.Pointer(ptr))
@@ -139,7 +139,7 @@ func (p *BufferPool) FreeBuffer(ptr *[]byte) {
 	offset := header.Data - poolPtr
 	// 判断该Buffer是否由MemPool分配
 	if !p.IsAlloc(*ptr) {
-		panic("the buffer is not BufferPool alloc")
+		panic("the buffer is not MemoryPool alloc")
 	}
 	// 重置原来的指针使其指向runtime.ZeroBase
 	header.Data = FreeBufferZeroBase
@@ -155,7 +155,7 @@ func (p *BufferPool) FreeBuffer(ptr *[]byte) {
 	p.allocMap[nBitMap] ^= freeAllocMap
 }
 
-func (p *BufferPool) IsAlloc(buf []byte) bool {
+func (p *MemoryPool) IsAlloc(buf []byte) bool {
 	header := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
 	poolPtr := (*reflect.SliceHeader)(unsafe.Pointer(p.pool)).Data
 	offset := header.Data - poolPtr
@@ -165,7 +165,7 @@ func (p *BufferPool) IsAlloc(buf []byte) bool {
 // Grow 扩容原来的Buffer,可指定的扩容大小为n * p.block
 // Example
 //	pool.Grow(&buffer,4)
-func (p *BufferPool) Grow(ptr *[]byte, nBlock int) bool {
+func (p *MemoryPool) Grow(ptr *[]byte, nBlock int) bool {
 	if !checkN(nBlock) {
 		return false
 	}
@@ -187,8 +187,8 @@ func (p *BufferPool) Grow(ptr *[]byte, nBlock int) bool {
 }
 
 // 打印分配的情况
-func mallocView(ptr *BufferPool) {
-	fmt.Printf("BufferPool : Size : %d, Pointer : %p, Block : %d\n", ptr.size, ptr.pool, ptr.block)
+func mallocView(ptr *MemoryPool) {
+	fmt.Printf("MemoryPool : Size : %d, Pointer : %p, Block : %d\n", ptr.size, ptr.pool, ptr.block)
 	for k, v := range ptr.allocMap {
 		fmt.Printf("(%d) -> %b\n", k+1, v)
 	}

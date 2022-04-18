@@ -93,6 +93,14 @@ func BenchmarkAlloc(b *testing.B) {
 			}
 		}
 	})
+	b.Run("4096B-NativeStackAlloc", func(b *testing.B) {
+		b.ReportAllocs()
+		b.StartTimer()
+		for i := 0; i < b.N; i++ {
+			_ = make([]byte,4096)
+		}
+		b.StopTimer()
+	})
 	b.Run("4096B-SyncPoolAlloc", func(b *testing.B) {
 		b.ReportAllocs()
 		pool := sync.Pool{
@@ -122,13 +130,13 @@ func FreeAlloc(ptr *[]byte) {
 	header.Cap = 0
 }
 
-func MemPollAllocAll(pool *BufferPool,allocN int) {
+func MemPollAllocAll(pool *MemoryPool,allocN int) {
 	for i := 0; i < allocN; i++ {
 		pool.AllocBuffer(1)
 	}
 }
 
-func MemPoolFreeAll(pool *BufferPool,allocN int) {
+func MemPoolFreeAll(pool *MemoryPool,allocN int) {
 	for i := 0; i < allocN; i++ {
 		slice := &reflect.SliceHeader{
 			Data: (*reflect.SliceHeader)(unsafe.Pointer(pool.pool)).Data + uintptr(i * int(pool.block)),
