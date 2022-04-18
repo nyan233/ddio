@@ -13,6 +13,7 @@ const (
 	eV_WRITE    = unix.EPOLLET | unix.EPOLLOUT
 	eV_LISTENER = unix.EPOLLIN
 	eV_CLOSE    = unix.EPOLLHUP
+	eV_ERROR    = unix.EPOLLERR
 )
 
 type poller struct {
@@ -23,16 +24,16 @@ type poller struct {
 	mu     *sync.Mutex
 }
 
-func NewPoller() (*poller,error) {
+func NewPoller() (*poller, error) {
 	ep, err := NewEpoll()
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
 	return &poller{
 		ep,
 		make(map[int]EventFlags, 256),
 		&sync.Mutex{},
-	},nil
+	}, nil
 }
 
 func (p poller) Exec(maxEvent int, timeOut time.Duration) ([]Event, error) {
@@ -46,43 +47,58 @@ func (p poller) Exec(maxEvent int, timeOut time.Duration) ([]Event, error) {
 	p.mu.Lock()
 	for i := 0; i < nEvent; i++ {
 		event := events[i]
+		// 如果发生的是非读写类事件，非读写类事件不能使用ET
+		switch  {
+		case event.Events & eV_ERROR == eV_ERROR:
+			break
+		case event.Events & eV_CLOSE == eV_CLOSE:
+			break
+		default:
+			// 判断原生事件中有无ET
+			// 因为Epoll一次只会触发一个事件
+			// 记录的事件可能不只一个，直接转换给上层的感觉就是同时触发了多个事件
+			// 主要是为了区分通用的EVENT_LISTENER & EVENT_READ 事件
+			if p.events[int(event.Fd)] & unix.EPOLLET == unix.EPOLLET {
+				event.Events |= EPOLLET
+			}
+		}
 		stdEvents[i] = Event{
 			sysFd: event.Fd,
-			event: epollToEvent(int(p.events[int(event.Fd)])),
+			event: epollToEvent(int(event.Events)),
 		}
 	}
 	p.mu.Unlock()
 	return stdEvents, nil
 }
 
-func (p poller) With(event *Event) error {
+func (p poller) With(event Event) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	flags := eventToEpoll(event.event)
 	event.event = EventFlags(flags)
-	err := p.AddEvent(event)
+	err := p.AddEvent(&event)
 	if err == nil {
 		p.events[int(event.fd())] = event.Flags()
 	}
 	return err
 }
 
-func (p poller) Modify(event *Event) error {
+func (p poller) Modify(event Event) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	flags := eventToEpoll(event.Flags())
 	event.event = EventFlags(flags)
-	err := p.ModEvent(event)
+	err := p.ModEvent(&event)
 	if err == nil {
 		p.events[int(event.fd())] = event.Flags()
 	}
 	return err
 }
 
-func (p poller) Cancel(event *Event) error {
+func (p poller) Cancel(event Event) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	err := p.DelEvent(event)
+	err := p.DelEvent(&event)
 	if err != nil {
 		delete(p.events, int(event.fd()))
 	}
@@ -117,6 +133,8 @@ func eventToEpoll(flags EventFlags) int {
 		epFlags |= eV_CLOSE
 	} else if flags&EVENT_LISTENER == EVENT_LISTENER {
 		epFlags |= eV_LISTENER
+	} else if flags&EVENT_ERROR == EVENT_ERROR {
+		epFlags |= eV_ERROR
 	}
 	return int(epFlags)
 }
@@ -131,6 +149,8 @@ func epollToEvent(epollEvent int) EventFlags {
 		flags |= EVENT_LISTENER
 	} else if epollEvent&eV_CLOSE == eV_CLOSE {
 		flags |= EVENT_CLOSE
+	} else if epollEvent&eV_ERROR == eV_ERROR{
+		flags |= EVENT_ERROR
 	}
 	return flags
 }
