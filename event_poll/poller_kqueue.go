@@ -45,7 +45,7 @@ func NewPoller() (*poller, error) {
 // Exec Kqueue 没有像Epoll那样可以监听Close事件，也没有ET/LT
 // 之分，所以Close事件不会得到响应。
 func (p poller) Exec(receiver []Event, timeOut time.Duration) (nEvent int, err error) {
-	kEvents := p.pool.Get().([]unix.Kevent_t)
+	kEvents := p.pool.Get().([]unix.Kevent_t)[:cap(receiver)]
 	readyN, err := p.Wait(kEvents, timeOut)
 	if err != nil {
 		return 0, err
