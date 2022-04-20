@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	eV_READ              = unix.EPOLLET | unix.EPOLLIN
-	eV_WRITE             = unix.EPOLLET | unix.EPOLLOUT
-	eV_LISTENER          = unix.EPOLLIN
-	eV_CLOSE             = unix.EPOLLHUP
-	eV_ERROR             = unix.EPOLLERR
+	eP_READ              = unix.EPOLLET | unix.EPOLLIN
+	eP_WRITE             = unix.EPOLLET | unix.EPOLLOUT
+	eP_LISTENER          = unix.EPOLLIN
+	eP_CLOSE             = unix.EPOLLHUP
+	eP_ERROR             = unix.EPOLLERR
 	ePOLL_ONCE_MAX_EVENT = MAX_POLLER_ONCE_EVENTS
 )
 
@@ -56,9 +56,9 @@ func (p poller) Exec(receiver []Event, timeOut time.Duration) (int, error) {
 		event := events[i]
 		// 如果发生的是非读写类事件，非读写类事件不能使用ET
 		switch {
-		case event.Events&eV_ERROR == eV_ERROR:
+		case event.Events&eP_ERROR == eP_ERROR:
 			break
-		case event.Events&eV_CLOSE == eV_CLOSE:
+		case event.Events&eP_CLOSE == eP_CLOSE:
 			break
 		default:
 			// 判断原生事件中有无ET
@@ -134,30 +134,30 @@ func (p poller) Exit() error {
 func eventToEpoll(flags EventFlags) int {
 	var epFlags EventFlags
 	if flags&EVENT_READ == EVENT_READ {
-		epFlags |= eV_READ
+		epFlags |= eP_READ
 	} else if flags&EVENT_WRITE == EVENT_WRITE {
-		epFlags |= eV_WRITE
+		epFlags |= eP_WRITE
 	} else if flags&EVENT_CLOSE == EVENT_CLOSE {
-		epFlags |= eV_CLOSE
+		epFlags |= eP_CLOSE
 	} else if flags&EVENT_LISTENER == EVENT_LISTENER {
-		epFlags |= eV_LISTENER
+		epFlags |= eP_LISTENER
 	} else if flags&EVENT_ERROR == EVENT_ERROR {
-		epFlags |= eV_ERROR
+		epFlags |= eP_ERROR
 	}
 	return int(epFlags)
 }
 
 func epollToEvent(epollEvent int) EventFlags {
 	var flags EventFlags
-	if epollEvent&eV_READ == eV_READ {
+	if epollEvent&eP_READ == eP_READ {
 		flags |= EVENT_READ
-	} else if epollEvent&eV_WRITE == eV_WRITE {
+	} else if epollEvent&eP_WRITE == eP_WRITE {
 		flags |= EVENT_WRITE
-	} else if epollEvent&eV_LISTENER == eV_LISTENER {
+	} else if epollEvent&eP_LISTENER == eP_LISTENER {
 		flags |= EVENT_LISTENER
-	} else if epollEvent&eV_CLOSE == eV_CLOSE {
+	} else if epollEvent&eP_CLOSE == eP_CLOSE {
 		flags |= EVENT_CLOSE
-	} else if epollEvent&eV_ERROR == eV_ERROR {
+	} else if epollEvent&eP_ERROR == eP_ERROR {
 		flags |= EVENT_ERROR
 	}
 	return flags
