@@ -58,12 +58,17 @@ func (p poller) Exec(receiver []Event, timeOut time.Duration) (nEvent int, err e
 		if flags == kQ_READ && p.events[int(v.Ident)] == EVENT_LISTENER {
 			flags = EVENT_LISTENER
 		}
+		// Error Or Eof
+		if v.Flags & kQ_ERROR != 0 || v.Flags & unix.EV_EOF != 0 {
+			flags |= EVENT_ERROR
+		}
 		receiver[k] = Event{
 			sysFd: int32(v.Ident),
 			event: flags,
 		}
 	}
 	p.mu.Unlock()
+	p.pool.Put(kEvents)
 	return readyN,err
 }
 
@@ -72,16 +77,34 @@ func (p poller) Exit() error {
 }
 
 func (p poller) With(event Event) error {
-	oldFlags := event.Flags()
-	event.event = EventFlags(eventToKqueue(event.Flags()))
-	err := p.AddEvent(&event)
 	p.mu.Lock()
+	oldEv,ok := p.events[int(event.fd())]
+	var kEvents []unix.Kevent_t
+	if ok {
+		kEvents = append(kEvents,unix.Kevent_t{
+			Ident:  uint64(event.fd()),
+			Filter: int16(eventToKqueue(oldEv)),
+			Flags:  unix.EV_DELETE | unix.EV_ONESHOT,
+			Fflags: 0,
+			Data:   0,
+			Udata:  nil,
+		})
+	}
+	kEvents = append(kEvents,unix.Kevent_t{
+		Ident:  uint64(event.fd()),
+		Filter: int16(eventToKqueue(event.Flags())),
+		Flags:  unix.EV_ADD | unix.EV_ENABLE,
+		Fflags: 0,
+		Data:   0,
+		Udata:  nil,
+	})
+	_,err := unix.Kevent(p.kqfd,kEvents,nil,nil)
 	if err != nil {
 		delete(p.events, int(event.fd()))
 		p.mu.Unlock()
 		return err
 	}
-	p.events[int(event.fd())] = oldFlags
+	p.events[int(event.fd())] = event.Flags()
 	p.mu.Unlock()
 	return nil
 }
@@ -111,15 +134,16 @@ func (p poller) AllEvents() []Event {
 	return events
 }
 
+
 func kqueueToEvent(event int) EventFlags {
 	var flags EventFlags
 	switch event {
 	case kQ_READ:
 		flags = EVENT_READ
+		break
 	case kQ_WRITE:
 		flags = EVENT_WRITE
-	case kQ_ERROR:
-		flags = EVENT_ERROR
+		break
 	}
 	return flags
 }
