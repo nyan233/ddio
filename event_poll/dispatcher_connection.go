@@ -99,13 +99,16 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 	// 记录的待写入的Conn
 	// 使用TCPConn而不使用*TCPConn的原因是防止对象逃逸
 	writeConns := make(map[int]TCPConn, ONCE_MAX_EVENTS)
+	freeWConn := func(fd int) {
+		delete(writeConns,fd)
+	}
 	receiver := make([]Event, ONCE_MAX_EVENTS)
 	for {
 		// 检测关闭信号
 		if atomic.LoadUint64(&p.closed) == 1 {
 			return
 		}
-		nEvent, err := p.poll.Exec(receiver, time.Duration((time.Second * 2).Milliseconds()))
+		nEvent, err := p.poll.Exec(receiver, time.Second * 2)
 		//events, err := p.poll.Exec(ONCE_MAX_EVENTS,-1)
 		if nEvent == 0 {
 			continue
@@ -118,6 +121,16 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 		for _, v := range events {
 			bc := &ch.BeforeConnHandler{}
 			switch {
+			case v.Flags()&EVENT_CLOSE == EVENT_CLOSE:
+				logger.Debug("client closed")
+				_ = syscall.Close(int(v.fd()))
+				freeWConn(int(v.fd()))
+				break
+			case v.Flags()&EVENT_ERROR == EVENT_ERROR:
+				logger.Debug("connection error")
+				_ = syscall.Close(int(v.fd()))
+				freeWConn(int(v.fd()))
+				break
 			case v.Flags()&EVENT_READ == EVENT_READ:
 				var bufferTmp [BUFFER_SIZE]byte
 				var buffer []byte
@@ -195,14 +208,6 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 				// 不管出不出错都释放写缓冲区和记录写map key
 				tcpConn.wBytes = nil
 				delete(writeConns, tcpConn.rawFd)
-			case v.Flags()&EVENT_CLOSE == EVENT_CLOSE:
-				logger.Debug("client closed")
-				_ = syscall.Close(int(v.fd()))
-				break
-			case v.Flags()&EVENT_ERROR == EVENT_ERROR:
-				logger.Debug("connection error")
-				_ = syscall.Close(int(v.fd()))
-				break
 			}
 		}
 	}

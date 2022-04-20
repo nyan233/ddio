@@ -79,7 +79,7 @@ func (l *ListenerMultiEventDispatcher) openLoop() {
 			l.done <- struct{}{}
 			return
 		}
-		events, err := l.poll.Exec(receiver, time.Duration((time.Second * 2).Milliseconds()))
+		events, err := l.poll.Exec(receiver, time.Second*2)
 		if events == 0 {
 			continue
 		}
@@ -100,7 +100,6 @@ func (l *ListenerMultiEventDispatcher) openLoop() {
 		err = l.connMds[n].AddConnEvent(connEvent)
 		if err != nil {
 			logger.ErrorFromString("add connection event error : " + err.Error())
-			break
 		}
 	}
 }
