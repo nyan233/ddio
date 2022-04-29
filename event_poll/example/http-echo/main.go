@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/zbh255/bilog"
 	"github.com/zbh255/nyan/event_poll"
-	"net"
 	"os"
 	"sync/atomic"
 	"time"
@@ -56,10 +55,8 @@ func main() {
 		NBalance: func() ddio.Balanced {
 			return &CustomBalanced{}
 		},
-		NetPollConfig: &ddio.NetPollConfig{
-			Protocol: 0x1,
-			IP:       net.ParseIP("192.168.1.150"),
-			Port:     8080,
+		MultiAddr: []string{
+			"tcp://192.168.1.179:8080?level=10",
 		},
 	}
 	_, err := ddio.NewEngine(ddio.NewTCPListener(ddio.EVENT_LISTENER), config)

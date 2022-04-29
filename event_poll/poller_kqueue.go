@@ -78,6 +78,8 @@ func (p poller) Exit() error {
 
 func (p poller) With(event Event) error {
 	p.mu.Lock()
+	// 思路取自: github.com/Allenxuxu/gev
+	// Link : https://github.com/Allenxuxu/gev/blob/7ac1dc183d41d1503378a0b9edc2cdc180be9487/poller/kqueue.go#L126
 	oldEv,ok := p.events[int(event.fd())]
 	var kEvents []unix.Kevent_t
 	if ok {
