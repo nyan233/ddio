@@ -24,6 +24,11 @@ const (
 	MAX_POLLER_ONCE_EVENTS = 1024
 )
 
+const (
+	TCP_V4 = 0x80
+	TCP_V6 = 0x90
+)
+
 // 一些错误
 var (
 	ErrorEpollClosed = errors.New("epoll is closed")
@@ -31,7 +36,18 @@ var (
 	ErrWrite         = errors.New("write error: ")
 )
 
+var (
+	DefaultConfig = ConnConfig{
+		OnDataNBlock:          1,
+		MaxReadSysCallNumber:  1024,
+		MaxWriteSysCallNumber: 1024,
+	}
+)
+
 // NewBalance 派生负载均衡器的工厂方法
 type NewBalance func() Balanced
 
-type ConnAfterCenterHandler func(fd int) error
+// AfterHandler 是一对回调函数,bool用于指示在后续的声明周期中是否还需要调用
+// 否则立即调用result-handler，用于Non-Block IO
+type AfterHandler func(fd int) (error,bool)
+type AfterResultHandler func(fd int,err error) error
