@@ -27,7 +27,6 @@ func TestWorkerPool(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	t.Log(count)
 }
 
 func BenchmarkTask(b *testing.B) {

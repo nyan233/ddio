@@ -11,14 +11,14 @@ func TestPollerWaitTimeOut(t *testing.T) {
 		t.Fatal(err)
 	}
 	poll := EventLoop(poller)
-	stdInEvent := Event{
-		sysFd: 4,
-		event: EVENT_READ,
-	}
-	err = poll.With(stdInEvent)
-	if err != nil {
-		t.Fatal(err)
-	}
+	//stdInEvent := Event{
+	//	sysFd: 4,
+	//	event: EVENT_READ,
+	//}
+	//err = poll.With(stdInEvent)
+	//if err != nil {
+	//	t.Fatal(err)
+	//}
 	t1 := time.Now()
 	receiver := make([]Event,10)
 	_, _ = poll.Exec(receiver, time.Second * 2)

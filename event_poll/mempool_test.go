@@ -37,7 +37,6 @@ func TestMemPool(t *testing.T) {
 			pool.FreeBuffer(buf)
 		}
 	}
-	mallocView(pool)
 }
 
 func BenchmarkAlloc(b *testing.B) {
