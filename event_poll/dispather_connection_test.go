@@ -8,5 +8,5 @@ func TestConnMultiEventDispatcherEscape(t *testing.T) {
 	//	err := recover()
 	//	t.Error(err)
 	//}()
-	_, _ = NewConnMultiEventDispatcher(nil)
+	_, _ = NewConnMultiEventDispatcher(nil,DefaultConfig)
 }

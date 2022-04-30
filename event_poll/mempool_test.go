@@ -117,6 +117,18 @@ func BenchmarkAlloc(b *testing.B) {
 	})
 }
 
+// 测试MemoryPool每个方法的性能
+func BenchmarkFn(b *testing.B) {
+	b.Run("IsAlloc", func(b *testing.B) {
+		b.ReportAllocs()
+		memPool := NewBufferPool(10,10)
+		buf,_ := memPool.AllocBuffer(1)
+		for i := 0; i < b.N; i++ {
+			_ = memPool.IsAlloc(buf)
+		}
+	})
+}
+
 func HeapAlloc(n int) []byte {
 	buf := make([]byte, n)
 	return buf
