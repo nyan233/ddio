@@ -45,7 +45,7 @@ func NewPoller() (*poller, error) {
 
 func (p poller) Exec(receiver []Event, timeOut time.Duration) (int, error) {
 	events := p.pool.Get().([]unix.EpollEvent)[:cap(receiver)]
-	nEvent, err := p.Wait(events, timeOut.Milliseconds())
+	nEvent, err := p.Wait(events, timeOut)
 	if err != nil {
 		return 0, err
 	}
