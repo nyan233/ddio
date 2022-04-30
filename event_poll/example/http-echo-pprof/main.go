@@ -37,7 +37,6 @@ func (s *SimpleHttpEchoServer) OnError(ev ddio.Event, err error) {
 
 var logger = bilog.NewLogger(os.Stdout, bilog.DEBUG, bilog.WithTimes(), bilog.WithCaller(), bilog.WithTopBuffer(2))
 
-
 func main() {
 	go func() {
 		logger.Debug(http.ListenAndServe("0.0.0.0:9090", nil).Error())

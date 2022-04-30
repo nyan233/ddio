@@ -7,7 +7,7 @@ import (
 )
 
 func TestPollerWaitTimeOut(t *testing.T) {
-	poller,err := NewPoller()
+	poller, err := NewPoller()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,17 +21,17 @@ func TestPollerWaitTimeOut(t *testing.T) {
 	//	t.Fatal(err)
 	//}
 	t1 := time.Now()
-	receiver := make([]Event,10)
-	_, _ = poll.Exec(receiver, time.Second * 2)
+	receiver := make([]Event, 10)
+	_, _ = poll.Exec(receiver, time.Second*2)
 	t2 := time.Now()
 	// 测试超时时间的正确性
-	if t2.Sub(t1) < time.Second * 1 {
+	if t2.Sub(t1) < time.Second*1 {
 		t.Fatal("poller wait error")
 	}
 }
 
 func TestAddEvent(t *testing.T) {
-	pollerRaw,err := NewPoller()
+	pollerRaw, err := NewPoller()
 	poller := EventLoop(pollerRaw)
 	if err != nil {
 		t.Fatal(err)

@@ -38,8 +38,8 @@ var (
 
 var (
 	DefaultConfig = ConnConfig{
-		OnDataNBlock:          1,
-		MaxReadSysCallNumberOnEventLoop: 1024,
+		OnDataNBlock:                     1,
+		MaxReadSysCallNumberOnEventLoop:  1024,
 		MaxWriteSysCallNumberOnEventLoop: 1024,
 	}
 )
@@ -49,5 +49,5 @@ type NewBalance func() Balanced
 
 // AfterHandler 是一对回调函数,bool用于指示在后续的声明周期中是否还需要调用
 // 否则立即调用result-handler，用于Non-Block IO
-type AfterHandler func(fd int) (error,bool)
-type AfterResultHandler func(fd int,err error) error
+type AfterHandler func(fd int) (error, bool)
+type AfterResultHandler func(fd int, err error) error

@@ -34,9 +34,9 @@ func NewPoller() (*poller, error) {
 		kqueue: kqPoller,
 		events: make(map[int]EventFlags, 256),
 		mu:     &sync.Mutex{},
-		pool:   &sync.Pool{
+		pool: &sync.Pool{
 			New: func() interface{} {
-				return make([]unix.Kevent_t,MAX_POLLER_ONCE_EVENTS)
+				return make([]unix.Kevent_t, MAX_POLLER_ONCE_EVENTS)
 			},
 		},
 	}, nil
@@ -53,13 +53,13 @@ func (p poller) Exec(receiver []Event, timeOut time.Duration) (nEvent int, err e
 	kEvents = kEvents[:readyN]
 	receiver = receiver[:readyN]
 	p.mu.Lock()
-	for k,v := range kEvents {
+	for k, v := range kEvents {
 		flags := kqueueToEvent(int(v.Filter))
 		if flags == kQ_READ && p.events[int(v.Ident)] == EVENT_LISTENER {
 			flags = EVENT_LISTENER
 		}
 		// Error Or Eof
-		if v.Flags & kQ_ERROR != 0 || v.Flags & unix.EV_EOF != 0 {
+		if v.Flags&kQ_ERROR != 0 || v.Flags&unix.EV_EOF != 0 {
 			flags |= EVENT_ERROR
 		}
 		receiver[k] = Event{
@@ -69,7 +69,7 @@ func (p poller) Exec(receiver []Event, timeOut time.Duration) (nEvent int, err e
 	}
 	p.mu.Unlock()
 	p.pool.Put(kEvents)
-	return readyN,err
+	return readyN, err
 }
 
 func (p poller) Exit() error {
@@ -80,10 +80,10 @@ func (p poller) With(event Event) error {
 	p.mu.Lock()
 	// 思路取自: github.com/Allenxuxu/gev
 	// Link : https://github.com/Allenxuxu/gev/blob/7ac1dc183d41d1503378a0b9edc2cdc180be9487/poller/kqueue.go#L126
-	oldEv,ok := p.events[int(event.fd())]
+	oldEv, ok := p.events[int(event.fd())]
 	var kEvents []unix.Kevent_t
 	if ok {
-		kEvents = append(kEvents,unix.Kevent_t{
+		kEvents = append(kEvents, unix.Kevent_t{
 			Ident:  uint64(event.fd()),
 			Filter: int16(eventToKqueue(oldEv)),
 			Flags:  unix.EV_DELETE | unix.EV_ONESHOT,
@@ -92,7 +92,7 @@ func (p poller) With(event Event) error {
 			Udata:  nil,
 		})
 	}
-	kEvents = append(kEvents,unix.Kevent_t{
+	kEvents = append(kEvents, unix.Kevent_t{
 		Ident:  uint64(event.fd()),
 		Filter: int16(eventToKqueue(event.Flags())),
 		Flags:  unix.EV_ADD | unix.EV_ENABLE,
@@ -100,7 +100,7 @@ func (p poller) With(event Event) error {
 		Data:   0,
 		Udata:  nil,
 	})
-	_,err := unix.Kevent(p.kqfd,kEvents,nil,nil)
+	_, err := unix.Kevent(p.kqfd, kEvents, nil, nil)
 	if err != nil {
 		delete(p.events, int(event.fd()))
 		p.mu.Unlock()
@@ -125,9 +125,9 @@ func (p poller) Cancel(event Event) error {
 
 func (p poller) AllEvents() []Event {
 	p.mu.Lock()
-	events := make([]Event,0,len(p.events))
+	events := make([]Event, 0, len(p.events))
 	for k, v := range p.events {
-		events = append(events,Event{
+		events = append(events, Event{
 			sysFd: int32(k),
 			event: v,
 		})
@@ -135,7 +135,6 @@ func (p poller) AllEvents() []Event {
 	p.mu.Unlock()
 	return events
 }
-
 
 func kqueueToEvent(event int) EventFlags {
 	var flags EventFlags
@@ -152,14 +151,14 @@ func kqueueToEvent(event int) EventFlags {
 
 func eventToKqueue(event EventFlags) int {
 	var flags int
-	switch  {
-	case event & EVENT_READ == EVENT_READ:
+	switch {
+	case event&EVENT_READ == EVENT_READ:
 		flags = kQ_READ
 		break
-	case event & EVENT_WRITE == EVENT_WRITE:
+	case event&EVENT_WRITE == EVENT_WRITE:
 		flags = kQ_WRITE
 		break
-	case event & EVENT_LISTENER == EVENT_LISTENER:
+	case event&EVENT_LISTENER == EVENT_LISTENER:
 		flags = kQ_READ
 		break
 	}

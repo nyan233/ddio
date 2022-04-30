@@ -43,9 +43,9 @@ func TestMemPool(t *testing.T) {
 func BenchmarkAlloc(b *testing.B) {
 	for i := 0; i <= 5; i++ {
 		nBlock := 1 << (8 + i)
-		runStr := fmt.Sprintf("4096B-%dBlock-MemPoolAlloc",nBlock)
+		runStr := fmt.Sprintf("4096B-%dBlock-MemPoolAlloc", nBlock)
 		b.Run(runStr, func(b *testing.B) {
-			pool := NewBufferPool(12, 8 + i)
+			pool := NewBufferPool(12, 8+i)
 			b.ReportAllocs()
 			b.StartTimer()
 			rand.Seed(time.Now().UnixNano())
@@ -126,8 +126,8 @@ func BenchmarkAlloc(b *testing.B) {
 func BenchmarkFn(b *testing.B) {
 	b.Run("IsAlloc", func(b *testing.B) {
 		b.ReportAllocs()
-		memPool := NewBufferPool(10,10)
-		buf,_ := memPool.AllocBuffer(1)
+		memPool := NewBufferPool(10, 10)
+		buf, _ := memPool.AllocBuffer(1)
 		for i := 0; i < b.N; i++ {
 			_ = memPool.IsAlloc(buf)
 		}

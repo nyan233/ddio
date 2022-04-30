@@ -21,7 +21,7 @@ type TCPConn struct {
 	//bigMemPool *MemoryPool
 	//bufferPool *sync.Pool
 	// 注册的专门用于扩容缓存区的函数
-	appendFn func(oldBuf []byte) (newBuf []byte,bl bool)
+	appendFn func(oldBuf []byte) (newBuf []byte, bl bool)
 	// 用于释放缓存区空间的函数
 	freeFn func(buf []byte)
 	// sync.Pool分配的缓冲元素
@@ -41,20 +41,19 @@ func (T *TCPConn) TakeWriteBuffer() *[]byte {
 	}
 }
 
-
 func (T *TCPConn) WriteBytes(p []byte) {
-	for len(p) + len(T.wBytes) > cap(T.wBytes) {
-		newBuf,bl := T.appendFn(T.wBytes)
+	for len(p)+len(T.wBytes) > cap(T.wBytes) {
+		newBuf, bl := T.appendFn(T.wBytes)
 		if bl {
 			T.wBytes = newBuf
 		} else {
 			oldBuf := T.wBytes
-			T.wBytes = make([]byte,0,cap(oldBuf) * 2)
-			T.wBytes = append(T.wBytes,oldBuf...)
+			T.wBytes = make([]byte, 0, cap(oldBuf)*2)
+			T.wBytes = append(T.wBytes, oldBuf...)
 			T.freeFn(oldBuf)
 		}
 	}
-	T.wBytes = append(T.wBytes,p...)
+	T.wBytes = append(T.wBytes, p...)
 }
 
 func (T *TCPConn) RegisterAfterHandler(hd AfterHandler) {
