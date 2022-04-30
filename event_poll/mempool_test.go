@@ -1,6 +1,7 @@
 package ddio
 
 import (
+	"fmt"
 	"math/rand"
 	"reflect"
 	"sort"
@@ -40,22 +41,26 @@ func TestMemPool(t *testing.T) {
 }
 
 func BenchmarkAlloc(b *testing.B) {
-	b.Run("4096B-MemPoolAlloc", func(b *testing.B) {
-		pool := NewBufferPool(12, 8)
-		b.ReportAllocs()
-		b.StartTimer()
-		rand.Seed(time.Now().UnixNano())
-		for i := 0; i < b.N; i++ {
-			buf, ok := pool.AllocBuffer(1)
-			if !ok {
-				continue
+	for i := 0; i <= 5; i++ {
+		nBlock := 1 << (8 + i)
+		runStr := fmt.Sprintf("4096B-%dBlock-MemPoolAlloc",nBlock)
+		b.Run(runStr, func(b *testing.B) {
+			pool := NewBufferPool(12, 8 + i)
+			b.ReportAllocs()
+			b.StartTimer()
+			rand.Seed(time.Now().UnixNano())
+			for i := 0; i < b.N; i++ {
+				buf, ok := pool.AllocBuffer(1)
+				if !ok {
+					continue
+				}
+				if rand.Intn(10)+1 > 5 {
+					pool.FreeBuffer(&buf)
+				}
 			}
-			if rand.Intn(10)+1 > 5 {
-				pool.FreeBuffer(&buf)
-			}
-		}
-		b.StopTimer()
-	})
+			b.StopTimer()
+		})
+	}
 	b.Run("4096B-MemPoolAllocAll", func(b *testing.B) {
 		pool := NewBufferPool(12, 8)
 		b.ReportAllocs()
