@@ -7,11 +7,10 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
-	"unsafe"
 )
 
 const (
-	ONCE_MAX_EVENTS = 256
+	ONCE_MAX_EVENTS = 1024
 	BUFFER_SIZE     = 4096
 )
 
@@ -154,11 +153,11 @@ func (p *ConnMultiEventDispatcher) handlerReadEvent(ev Event,writeConns map[int]
 	}
 	//buffer = buffer[:cap(buffer)]
 	var tcpConn *TCPConn
-	tcpConn = (*TCPConn)(noescape(unsafe.Pointer(&TCPConn{
+	tcpConn = &TCPConn{
 		rawFd: int(ev.fd()),
 		appendFn: p.appendBytes,
 		freeFn: p.freeBytes,
-	})))
+	}
 	bufferReadN := 0
 	var onDataOk bool
 	readEvent:
@@ -251,16 +250,17 @@ func (p *ConnMultiEventDispatcher) handlerWriteEvent(ev Event,writeConns map[int
 		logger.ErrorFromErr(errors.New("write event not register"))
 		return
 	}
+	wb := tcpConn.wBytes
 	for i := 0; i < p.connConfig.MaxWriteSysCallNumberOnEventLoop; i++ {
-		writeN, err := bc.NioWrite(tcpConn.rawFd, tcpConn.wBytes)
-		tcpConn.wBytes = tcpConn.wBytes[writeN:]
+		writeN, err := bc.NioWrite(tcpConn.rawFd, wb)
+		wb = wb[writeN:]
 		if err != nil && err != syscall.EAGAIN {
 			logger.ErrorFromErr(err)
 			p.handler.OnError(ev, ErrWrite)
 			break
 		}
 		// 写完
-		if len(tcpConn.wBytes) == 0 {
+		if len(wb) == 0 {
 			break
 		}
 	}
