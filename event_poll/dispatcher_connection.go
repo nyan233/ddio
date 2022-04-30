@@ -3,7 +3,7 @@ package ddio
 import (
 	"errors"
 	ch "github.com/zbh255/nyan/event_poll/internal/conn_handler"
-	"reflect"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -21,20 +21,20 @@ type ConnMultiEventDispatcher struct {
 	poll    EventLoop
 	closed  uint64
 	done    chan struct{}
-	// 最多在事件循环中尝试读取的次数
-	maxReadNumberOnEventLoop int
-	// 最多在事件循环中尝试写入的次数
-	maxWriteNumberOnEventLoop int
-	// Block Number == 8192
-	// Block Size == 4096 Byte
+	connConfig ConnConfig
 	/*
 		从Reactor除了添加和删除事件之外和其他的goroutine
 		之间并没有竞争，Http Server不涉及业务，应该不会将报文传递给其它goroutine
 		所以，一些数据结构可以在栈本地直接分配，这样也是性能最高的。
 		goroutine 栈最大可达1GB，所以一次为256个请求分配报文应该没有问题
 	*/
-	//memPool *MemoryPool
-	//bufferPool *sync.Pool
+	// 为in-out准备的内存池，它主要用于准备默认大小的Buffer
+	littleMemPool *MemoryPool
+	// 为in-out准备的内存池，它可以优化Big-Http-Header之类的场景
+	bigMemPool *MemoryPool
+	// 所有子Reactor共享的Pool
+	// 该值应该由主Reactor初始化时设置
+	bufferPool *sync.Pool
 
 }
 
@@ -47,7 +47,7 @@ func (b *bufferElem) Reset() {
 	b.buf = b.buf[:0]
 }
 
-func NewConnMultiEventDispatcher(handler ConnectionEventHandler) (*ConnMultiEventDispatcher, error) {
+func NewConnMultiEventDispatcher(handler ConnectionEventHandler,connConfig ConnConfig) (*ConnMultiEventDispatcher, error) {
 	cmed := &ConnMultiEventDispatcher{}
 	cmed.handler = handler
 	poller, err := NewPoller()
@@ -55,11 +55,10 @@ func NewConnMultiEventDispatcher(handler ConnectionEventHandler) (*ConnMultiEven
 		logger.ErrorFromErr(err)
 		return nil, err
 	}
-	cmed.maxReadNumberOnEventLoop = 1024
-	cmed.maxWriteNumberOnEventLoop = 1024
+	cmed.connConfig = connConfig
 	cmed.poll = poller
 	// memory pool
-	//cmed.memPool = NewBufferPool(12, int(math.Log2(ONCE_MAX_EVENTS)))
+	//cmed.bigMemPool = NewBufferPool(12, int(math.Log2(ONCE_MAX_EVENTS)))
 	//// buffer pool
 	//cmed.bufferPool = &sync.Pool{
 	//	New: func() interface{} {
@@ -102,6 +101,11 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 	freeWConn := func(fd int) {
 		delete(writeConns,fd)
 	}
+	// 堆分配的in-out buffer，大小是默认栈分配的两倍，即8192
+	// 分割为1024块缓存区
+	p.bigMemPool = NewBufferPool(13,10)
+	// 小内存池，大小为4096
+	p.littleMemPool = NewBufferPool(12,10)
 	receiver := make([]Event, ONCE_MAX_EVENTS)
 	for {
 		// 检测关闭信号
@@ -119,7 +123,6 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 		events := receiver[:nEvent]
 		// TODO: 暂时没有找到处理慢连接的好方法
 		for _, v := range events {
-			bc := &ch.BeforeConnHandler{}
 			switch {
 			case v.Flags()&EVENT_CLOSE == EVENT_CLOSE:
 				logger.Debug("client closed")
@@ -132,84 +135,163 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 				freeWConn(int(v.fd()))
 				break
 			case v.Flags()&EVENT_READ == EVENT_READ:
-				var bufferTmp [BUFFER_SIZE]byte
-				var buffer []byte
-				buffer = *(*[]byte)(noescape(unsafe.Pointer(&reflect.SliceHeader{
-					Data: uintptr(noescape(unsafe.Pointer(&bufferTmp))),
-					Len:  BUFFER_SIZE,
-					Cap:  BUFFER_SIZE,
-				})))
-				//buffer = buffer[:cap(buffer)]
-				var tcpConn *TCPConn
-				tcpConn = (*TCPConn)(noescape(unsafe.Pointer(&TCPConn{
-					rawFd: int(v.fd()),
-				})))
-				bufferReadN := 0
-				for i := 0; i < p.maxReadNumberOnEventLoop; i++ {
-					readN, err := bc.NioRead(tcpConn.rawFd, buffer[bufferReadN:])
-					bufferReadN += readN
-					if err == syscall.EAGAIN || err == nil {
-						tcpConn.rBytes = buffer
-						tcpConn.rBytes = tcpConn.rBytes[:bufferReadN]
-						// 分配写缓冲区
-						var wBufferTmp [BUFFER_SIZE]byte
-						var wBuffer []byte
-						wBuffer = *(*[]byte)(noescape(unsafe.Pointer(&reflect.SliceHeader{
-							Data: uintptr(noescape(unsafe.Pointer(&wBufferTmp))),
-							Len:  BUFFER_SIZE,
-							Cap:  BUFFER_SIZE,
-						})))
-						tcpConn.wBytes = wBuffer[:0]
-						err := p.handler.OnData(tcpConn)
-						if err != nil {
-							p.handler.OnError(v, errors.New("OnData error: "+err.Error()))
-							break
-						}
-						// 释放读缓冲
-						tcpConn.rBytes = nil
-						// 注册写事件
-						p.modWrite(v)
-						writeConns[tcpConn.rawFd] = *tcpConn
-						break
-					} else if err == syscall.EINTR {
-						// 检查缓存区大小，容量满则扩容
-						if !(len(buffer) == cap(buffer)) {
-							continue
-						}
-						buffer := append(buffer, []byte{0, 0, 0, 0, 0}...)
-						buffer = buffer[:cap(buffer)]
-						continue
-					} else if err != nil {
-						p.handler.OnError(v, ErrRead)
-						break
-					}
-				}
+				p.handlerReadEvent(v,writeConns)
 			case v.Flags()&EVENT_WRITE == EVENT_WRITE:
-				tcpConn, ok := writeConns[int(v.fd())]
-				if !ok {
-					logger.ErrorFromErr(errors.New("write event not register"))
-					continue
-				}
-				for i := 0; i < p.maxWriteNumberOnEventLoop; i++ {
-					writeN, err := bc.NioWrite(tcpConn.rawFd, tcpConn.wBytes)
-					tcpConn.wBytes = tcpConn.wBytes[writeN:]
-					if err != nil && err != syscall.EAGAIN {
-						logger.ErrorFromErr(err)
-						p.handler.OnError(v, ErrWrite)
-						break
-					}
-					// 写完
-					if len(tcpConn.wBytes) == 0 {
-						break
-					}
-				}
-				// 重新注册读事件
-				p.modRead(v)
-				// 不管出不出错都释放写缓冲区和记录写map key
-				tcpConn.wBytes = nil
-				delete(writeConns, tcpConn.rawFd)
+				p.handlerWriteEvent(v,writeConns)
 			}
 		}
+	}
+}
+
+// wPoolAlloc指示写缓冲区是否从p.bufferPool分配，该成员类型是*sync.Pool
+func (p *ConnMultiEventDispatcher) handlerReadEvent(ev Event,writeConns map[int]TCPConn) (wPoolAlloc bool){
+	bc := ch.BeforeConnHandler{}
+	buffer,ok := p.littleMemPool.AllocBuffer(1)
+	var rPoolAlloc bool
+	if !ok {
+		buffer = p.bufferPool.Get().([]byte)[:0]
+		rPoolAlloc = true
+	}
+	//buffer = buffer[:cap(buffer)]
+	var tcpConn *TCPConn
+	tcpConn = (*TCPConn)(noescape(unsafe.Pointer(&TCPConn{
+		rawFd: int(ev.fd()),
+		appendFn: p.appendBytes,
+		freeFn: p.freeBytes,
+	})))
+	bufferReadN := 0
+	var onDataOk bool
+	readEvent:
+	for i := 0; i < p.connConfig.MaxReadSysCallNumberOnEventLoop; i++ {
+		readN, err := bc.NioRead(tcpConn.rawFd, buffer[bufferReadN:])
+		bufferReadN += readN
+		if onDataOk {
+			err = syscall.EAGAIN
+		}
+		if err == syscall.EAGAIN || err == nil {
+			tcpConn.rBytes = buffer
+			tcpConn.rBytes = tcpConn.rBytes[:bufferReadN]
+			// 分配写缓冲区
+			wBuffer,bl := p.littleMemPool.AllocBuffer(1)
+			if !bl {
+				wBuffer = p.bufferPool.Get().([]byte)
+				wPoolAlloc = true
+			}
+			tcpConn.wBytes = wBuffer[:0]
+			err := p.handler.OnData(tcpConn)
+			if err != nil {
+				p.handler.OnError(ev, errors.New("OnData error: "+err.Error()))
+				break
+			}
+			// 释放读缓冲
+			if rPoolAlloc {
+				p.bufferPool.Put(buffer)
+			} else {
+				if p.littleMemPool.IsAlloc(buffer) {
+					p.littleMemPool.FreeBuffer(&buffer)
+				} else if p.bigMemPool.IsAlloc(buffer) {
+					p.bigMemPool.FreeBuffer(&buffer)
+				}
+			}
+			tcpConn.rBytes = nil
+			// 写缓冲区有数据时则注册写事件
+			if len(tcpConn.wBytes) > 0 {
+				p.modWrite(ev)
+				writeConns[tcpConn.rawFd] = *tcpConn
+			}
+			break
+		} else if err == syscall.EINTR {
+			// 检查缓存区大小，容量满则扩容
+			if !(len(buffer) == cap(buffer)) {
+				continue
+			}
+			// 检查是否符合触发OnData事件需要读取的Buffer-Block数量
+			if len(buffer) / BUFFER_SIZE >= p.connConfig.OnDataNBlock {
+				goto readEvent
+			}
+			var growOk bool
+			// 针对小缓存区的扩容操作
+			// 分配大缓存区的空间->分配失败则从bufferPool分配->释放原有空间和标记分配情况
+			if p.littleMemPool.IsAlloc(buffer) {
+				newBuf,bl := p.bigMemPool.AllocBuffer(1)
+				growOk = bl
+				if !bl {
+					newBuf = p.bufferPool.Get().([]byte)[:0]
+					newBuf = append(newBuf,buffer...)
+					rPoolAlloc = true
+					p.littleMemPool.FreeBuffer(&buffer)
+					buffer = newBuf
+					growOk = true
+				}
+			}
+			// 如果不判断是否已经扩容的话，就会导致重复扩容
+			if !growOk && p.bigMemPool.IsAlloc(buffer) {
+				newBuf,bl := doubleGrow(p.bigMemPool,buffer)
+				if !bl {
+					newBuf = p.bufferPool.Get().([]byte)[:0]
+					newBuf = append(newBuf,buffer...)
+					rPoolAlloc = true
+					p.bigMemPool.FreeBuffer(&buffer)
+					buffer = newBuf
+				}
+			}
+			continue
+		} else if err != nil {
+			p.handler.OnError(ev, ErrRead)
+			break
+		}
+	}
+	return
+}
+
+func (p *ConnMultiEventDispatcher) handlerWriteEvent(ev Event,writeConns map[int]TCPConn) {
+	bc := &ch.BeforeConnHandler{}
+	tcpConn, ok := writeConns[int(ev.fd())]
+	if !ok {
+		logger.ErrorFromErr(errors.New("write event not register"))
+		return
+	}
+	for i := 0; i < p.connConfig.MaxWriteSysCallNumberOnEventLoop; i++ {
+		writeN, err := bc.NioWrite(tcpConn.rawFd, tcpConn.wBytes)
+		tcpConn.wBytes = tcpConn.wBytes[writeN:]
+		if err != nil && err != syscall.EAGAIN {
+			logger.ErrorFromErr(err)
+			p.handler.OnError(ev, ErrWrite)
+			break
+		}
+		// 写完
+		if len(tcpConn.wBytes) == 0 {
+			break
+		}
+	}
+	// 重新注册读事件
+	p.modRead(ev)
+	// 不管出不出错都释放写缓冲区和记录写map key
+	if p.littleMemPool.IsAlloc(tcpConn.wBytes) {
+		p.littleMemPool.FreeBuffer(&tcpConn.wBytes)
+	} else if p.bigMemPool.IsAlloc(tcpConn.wBytes) {
+		p.bigMemPool.FreeBuffer(&tcpConn.wBytes)
+	} else {
+		p.bufferPool.Put(tcpConn.wBytes)
+	}
+	tcpConn.wBytes = nil
+	delete(writeConns, tcpConn.rawFd)
+}
+
+func (p *ConnMultiEventDispatcher) appendBytes(oldBuf []byte) (newBuf []byte,bl bool) {
+	if p.littleMemPool.IsAlloc(oldBuf) {
+		newBuf,bl = doubleGrow(p.littleMemPool,oldBuf)
+	} else if p.bigMemPool.IsAlloc(oldBuf) {
+		newBuf,bl = doubleGrow(p.bigMemPool,oldBuf)
+	}
+	return
+}
+
+func (p *ConnMultiEventDispatcher) freeBytes(oldBuf []byte) {
+	if p.littleMemPool.IsAlloc(oldBuf) {
+		p.littleMemPool.FreeBuffer(&oldBuf)
+	} else if p.bigMemPool.IsAlloc(oldBuf) {
+		p.bigMemPool.FreeBuffer(&oldBuf)
 	}
 }
 

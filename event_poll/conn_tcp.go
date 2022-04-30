@@ -14,12 +14,16 @@ type TCPConn struct {
 	rBytes []byte
 	// 写缓冲
 	wBytes     []byte
-	hd         ConnAfterCenterHandler
+	hd         AfterHandler
 	nextNBlock int
 	// 告诉事件循环，用户代码已经将连接关闭
 	closed bool
-	//memPool *MemoryPool
+	//bigMemPool *MemoryPool
 	//bufferPool *sync.Pool
+	// 注册的专门用于扩容缓存区的函数
+	appendFn func(oldBuf []byte) (newBuf []byte,bl bool)
+	// 用于释放缓存区空间的函数
+	freeFn func(buf []byte)
 	// sync.Pool分配的缓冲元素
 	//buf *bufferElem
 	addr net.Addr
@@ -37,29 +41,23 @@ func (T *TCPConn) TakeWriteBuffer() *[]byte {
 	}
 }
 
-// GrowWriteBuffer 扩容大小 == 原来大小 + nCap * Block
-func (T *TCPConn) GrowWriteBuffer(buf *[]byte, nCap int) {
-	//if !T.memPool.Grow(buf,(cap(*buf) / T.memPool.BlockSize()) + nCap) {
-	//	tmp := make([]byte,cap(*buf) * 2)
-	//	tmp = tmp[:len(*buf)]
-	//	copy(tmp,*buf)
-	//	// 扩容失败可能是内存池的容量不足导致扩容失败
-	//	// 这时，如果是由内存池分配的内存不释放就会导致内存泄漏
-	//	// 所以，以下这段代码负责内存池分配内存的释放工作
-	//	if T.memPool.IsAlloc(*buf) {
-	//		T.memPool.FreeBuffer(buf)
-	//	}
-	//	*buf = tmp
-	//	T.buf.buf = tmp
-	//}
-
-}
 
 func (T *TCPConn) WriteBytes(p []byte) {
-	T.wBytes = append(T.wBytes, p...)
+	for len(p) + len(T.wBytes) > cap(T.wBytes) {
+		newBuf,bl := T.appendFn(T.wBytes)
+		if bl {
+			T.wBytes = newBuf
+		} else {
+			oldBuf := T.wBytes
+			T.wBytes = make([]byte,0,cap(oldBuf) * 2)
+			T.wBytes = append(T.wBytes,oldBuf...)
+			T.freeFn(oldBuf)
+		}
+	}
+	T.wBytes = append(T.wBytes,p...)
 }
 
-func (T *TCPConn) RegisterAfterHandler(hd ConnAfterCenterHandler) {
+func (T *TCPConn) RegisterAfterHandler(hd AfterHandler) {
 	T.hd = hd
 }
 

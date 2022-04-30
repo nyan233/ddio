@@ -2,6 +2,7 @@ package ddio
 
 import (
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -28,9 +29,17 @@ func NewListenerMultiEventDispatcher(handler ListenerEventHandler, config *Liste
 	if nMds > MAX_SLAVE_LOOP_SIZE {
 		nMds = MAX_SLAVE_LOOP_SIZE
 	}
+	// 所有子Goroutine共享的Pool
+	pool := sync.Pool{
+		New: func() interface{}{
+			return make([]byte,BUFFER_SIZE)
+		},
+	}
 	connMds := make([]*ConnMultiEventDispatcher, nMds)
+	connConfig := config.ConnEHd.OnInit()
 	for i := 0; i < len(connMds); i++ {
-		tmp, err := NewConnMultiEventDispatcher(config.ConnEHd)
+		tmp, err := NewConnMultiEventDispatcher(config.ConnEHd,connConfig)
+		tmp.bufferPool = &pool
 		if err != nil {
 			return nil, err
 		}
