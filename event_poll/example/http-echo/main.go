@@ -13,7 +13,7 @@ type SimpleHttpEchoServer struct {
 }
 
 func (s *SimpleHttpEchoServer) OnInit() ddio.ConnConfig {
-	return ddio.ConnConfig{OnDataNBlock: 1}
+	return ddio.DefaultConfig
 }
 
 func (s *SimpleHttpEchoServer) OnData(conn *ddio.TCPConn) error {
@@ -56,7 +56,7 @@ func main() {
 			return &CustomBalanced{}
 		},
 		MultiAddr: []string{
-			"tcp://192.168.1.179:8080?level=10",
+			"tcp://0.0.0.0:8080?level=10",
 		},
 	}
 	_, err := ddio.NewEngine(ddio.NewTCPListener(ddio.EVENT_LISTENER), config)

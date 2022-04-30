@@ -7,7 +7,6 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"sync/atomic"
 	"time"
 )
 
@@ -36,20 +35,8 @@ func (s *SimpleHttpEchoServer) OnError(ev ddio.Event, err error) {
 	fmt.Println("connection error: ", err)
 }
 
-var count int64
 var logger = bilog.NewLogger(os.Stdout, bilog.DEBUG, bilog.WithTimes(), bilog.WithCaller(), bilog.WithTopBuffer(2))
 
-type CustomBalanced struct {
-}
-
-func (c *CustomBalanced) Name() string {
-	return "custom-round"
-}
-
-func (c *CustomBalanced) Target(connLen, fd int) int {
-	atomic.AddInt64(&count, 1)
-	return fd % connLen
-}
 
 func main() {
 	go func() {
@@ -58,21 +45,16 @@ func main() {
 	config := &ddio.EngineConfig{
 		ConnHandler: &SimpleHttpEchoServer{},
 		NBalance: func() ddio.Balanced {
-			return &CustomBalanced{}
+			return &ddio.RoundBalanced{}
 		},
 		MultiAddr: []string{
-			"tcp://127.0.0.1:9090?level=10",
+			"tcp://0.0.0.0:8080?level=10",
 		},
 	}
 	_, err := ddio.NewEngine(ddio.NewTCPListener(ddio.EVENT_LISTENER), config)
 	if err != nil {
 		panic(err)
 	}
-	go func() {
-		for {
-			time.Sleep(time.Second * 5)
-			logger.Debug(fmt.Sprintf("connection count: %d", atomic.LoadInt64(&count)))
-		}
-	}()
+
 	select {}
 }
