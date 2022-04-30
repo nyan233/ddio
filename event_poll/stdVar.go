@@ -39,8 +39,8 @@ var (
 var (
 	DefaultConfig = ConnConfig{
 		OnDataNBlock:          1,
-		MaxReadSysCallNumber:  1024,
-		MaxWriteSysCallNumber: 1024,
+		MaxReadSysCallNumberOnEventLoop: 1024,
+		MaxWriteSysCallNumberOnEventLoop: 1024,
 	}
 )
 

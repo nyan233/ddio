@@ -13,6 +13,15 @@ func noescape(pointer unsafe.Pointer) unsafe.Pointer {
 	return unsafe.Pointer(x ^ 0)
 }
 
+// 方便的双倍扩容函数
+func doubleGrow(memPool *MemoryPool,oldBuf []byte) (newBuf []byte,bl bool) {
+	bl = memPool.Grow(&oldBuf,(cap(oldBuf) / memPool.BlockSize()) * 2)
+	if bl {
+		newBuf = oldBuf
+	}
+	return
+}
+
 func parseAddress(addr string) (config NetPollConfig, argMap map[string]string, err error) {
 	argSlice := strings.Split(strings.SplitN(addr, "?", 2)[1], "&")
 	argMap = make(map[string]string, len(argSlice)/2)

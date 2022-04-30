@@ -34,7 +34,7 @@ type ConnConfig struct {
 	// 一个Block大小为4KB
 	OnDataNBlock int
 	// 尝试Non-Block read()的最大次数
-	MaxReadSysCallNumber int
+	MaxReadSysCallNumberOnEventLoop int
 	// 尝试Non-Block write()的最大次数
-	MaxWriteSysCallNumber int
+	MaxWriteSysCallNumberOnEventLoop int
 }
