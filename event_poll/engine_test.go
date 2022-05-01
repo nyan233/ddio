@@ -3,6 +3,7 @@ package ddio
 import (
 	"errors"
 	"fmt"
+	"github.com/zbh255/bilog"
 	"golang.org/x/sys/unix"
 	"math/rand"
 	"net"
@@ -16,7 +17,9 @@ type testEchoServer struct {
 }
 
 func (t *testEchoServer) OnInit() ConnConfig {
-	return DefaultConfig
+	config := DefaultConfig
+	config.OnDataNBlock = 4
+	return config
 }
 
 func (t *testEchoServer) OnData(conn *TCPConn) error {
@@ -36,7 +39,15 @@ func (t *testEchoServer) OnError(ev Event, err error) {
 	unix.Close(int(ev.fd()))
 }
 
+type testWriter struct {}
+
+func (t testWriter) Write(p []byte) (n int, err error) {
+	return len(p),nil
+}
+
 func TestEngine(t *testing.T) {
+	// 重新设置日志组件，否则会有一些烦人的日志
+	logger = bilog.NewLogger(&testWriter{},bilog.PANIC)
 	addrs := []string{
 		"0.0.0.0:4076",
 		"0.0.0.0:4077",
@@ -60,7 +71,7 @@ func TestEngine(t *testing.T) {
 			return tmp
 		}(),
 	}
-	_, err := NewEngine(NewTCPListener(EVENT_LISTENER),config)
+	server, err := NewEngine(NewTCPListener(EVENT_LISTENER),config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +124,7 @@ func TestEngine(t *testing.T) {
 			wg.Wait()
 		})
 	}
-	//server.Close()
+	server.Close()
 }
 
 func randomNBytes(n int) []byte {
