@@ -147,10 +147,11 @@ func (p *ConnMultiEventDispatcher) handlerReadEvent(ev Event, writeConns map[int
 	buffer, ok := p.littleMemPool.AllocBuffer(1)
 	var rPoolAlloc bool
 	if !ok {
-		buffer = p.bufferPool.Get().([]byte)[:0]
+		buffer = p.bufferPool.Get().([]byte)
 		rPoolAlloc = true
 	}
-	//buffer = buffer[:cap(buffer)]
+	// reset buffer
+	buffer = buffer[:cap(buffer)]
 	var tcpConn *TCPConn
 	tcpConn = &TCPConn{
 		rawFd:    int(ev.fd()),
@@ -159,16 +160,17 @@ func (p *ConnMultiEventDispatcher) handlerReadEvent(ev Event, writeConns map[int
 	}
 	bufferReadN := 0
 	var onDataOk bool
+	rb := buffer
 readEvent:
 	for i := 0; i < p.connConfig.MaxReadSysCallNumberOnEventLoop; i++ {
-		readN, err := bc.NioRead(tcpConn.rawFd, buffer[bufferReadN:])
+		readN, err := bc.NioRead(tcpConn.rawFd, rb[bufferReadN:])
+		// bufferReadN指示以读取数据的长度
 		bufferReadN += readN
 		if onDataOk {
 			err = syscall.EAGAIN
 		}
 		if err == syscall.EAGAIN || err == nil {
-			tcpConn.rBytes = buffer
-			tcpConn.rBytes = tcpConn.rBytes[:bufferReadN]
+			tcpConn.rBytes = buffer[:bufferReadN]
 			// 分配写缓冲区
 			wBuffer, bl := p.littleMemPool.AllocBuffer(1)
 			if !bl {
@@ -200,7 +202,7 @@ readEvent:
 			break
 		} else if err == syscall.EINTR {
 			// 检查缓存区大小，容量满则扩容
-			if !(len(buffer) == cap(buffer)) {
+			if !(bufferReadN == cap(buffer)) {
 				continue
 			}
 			// 检查是否符合触发OnData事件需要读取的Buffer-Block数量
@@ -233,6 +235,8 @@ readEvent:
 					buffer = newBuf
 				}
 			}
+			// reset read buffer
+			rb = buffer[:cap(buffer)]
 			continue
 		} else if err != nil {
 			p.handler.OnError(ev, ErrRead)
