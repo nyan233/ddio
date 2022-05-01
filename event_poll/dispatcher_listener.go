@@ -5,7 +5,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
-	"time"
 )
 
 // ListenerMultiEventDispatcher 主多路事件派发器
@@ -45,6 +44,7 @@ func NewListenerMultiEventDispatcher(handler ListenerEventHandler, config *Liste
 		}
 		connMds[i] = tmp
 	}
+	lmed.done = make(chan struct{},1)
 	lmed.connMds = connMds
 	lmed.handler = handler
 	lmed.config = config
@@ -82,13 +82,15 @@ func (l *ListenerMultiEventDispatcher) Close() error {
 }
 
 func (l *ListenerMultiEventDispatcher) openLoop() {
+	defer func() {
+		l.done <- struct{}{}
+	}()
 	receiver := make([]Event, 1)
 	for {
 		if atomic.LoadUint64(&l.closed) == 1 {
-			l.done <- struct{}{}
 			return
 		}
-		events, err := l.poll.Exec(receiver, time.Second*2)
+		events, err := l.poll.Exec(receiver, EVENT_LOOP_SLEEP)
 		if events == 0 {
 			continue
 		}

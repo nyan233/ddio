@@ -1,6 +1,9 @@
 package ddio
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 // 这里描述了一些通用的提示值
 
@@ -22,6 +25,8 @@ const (
 	MAX_SLAVE_LOOP_SIZE = 64
 	// MAX_POLLER_ONCE_EVENTS 各底层Poller一次最多响应的就绪事件
 	MAX_POLLER_ONCE_EVENTS = 1024
+	// EVENT_LOOP_SLEEP 事件循环阻塞等待就绪事件的默认超时时间
+	EVENT_LOOP_SLEEP time.Duration = time.Millisecond
 )
 
 const (

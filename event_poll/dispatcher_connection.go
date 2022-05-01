@@ -6,7 +6,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
-	"time"
 )
 
 const (
@@ -36,14 +35,6 @@ type ConnMultiEventDispatcher struct {
 	bufferPool *sync.Pool
 }
 
-// 对复用[]byte的一些描述
-type bufferElem struct {
-	buf []byte
-}
-
-func (b *bufferElem) Reset() {
-	b.buf = b.buf[:0]
-}
 
 func NewConnMultiEventDispatcher(handler ConnectionEventHandler, connConfig ConnConfig) (*ConnMultiEventDispatcher, error) {
 	cmed := &ConnMultiEventDispatcher{}
@@ -54,6 +45,7 @@ func NewConnMultiEventDispatcher(handler ConnectionEventHandler, connConfig Conn
 		return nil, err
 	}
 	cmed.connConfig = connConfig
+	cmed.done = make(chan struct{},1)
 	cmed.poll = poller
 	// memory pool
 	//cmed.bigMemPool = NewBufferPool(12, int(math.Log2(ONCE_MAX_EVENTS)))
@@ -78,15 +70,16 @@ func (p *ConnMultiEventDispatcher) AddConnEvent(ev *Event) error {
 	return nil
 }
 
-func (p *ConnMultiEventDispatcher) Close() {
+func (p *ConnMultiEventDispatcher) Close() error {
 	if !atomic.CompareAndSwapUint64(&p.closed, 0, 1) {
 		// 不允许重复关闭
-		return
+		return ErrorEpollClosed
 	}
 	<-p.done
 	for _, v := range p.poll.AllEvents() {
 		p.handler.OnError(v, ErrorEpollClosed)
 	}
+	return nil
 }
 
 func (p *ConnMultiEventDispatcher) openLoop() {
@@ -110,7 +103,7 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 		if atomic.LoadUint64(&p.closed) == 1 {
 			return
 		}
-		nEvent, err := p.poll.Exec(receiver, time.Second*2)
+		nEvent, err := p.poll.Exec(receiver, EVENT_LOOP_SLEEP)
 		//events, err := p.poll.Exec(ONCE_MAX_EVENTS,-1)
 		if nEvent == 0 {
 			continue
