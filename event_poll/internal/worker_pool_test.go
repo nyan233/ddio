@@ -2,32 +2,17 @@ package internal
 
 import (
 	"fmt"
+	"net"
+	"runtime"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
 
-func TestWorkerPool(t *testing.T) {
-	onErr := func(err error) {
-		t.Error(err)
-	}
-	pool := NewWorkerPool(1200, 1500, time.Minute, onErr)
-	var wg sync.WaitGroup
-	wg.Add(10000)
-	mu := sync.Mutex{}
-	count := 0
-	for i := 0; i < 10000; i++ {
-		pool.AddTask(func() error {
-			mu.Lock()
-			defer mu.Unlock()
-			count++
-			wg.Done()
-			return nil
-		})
-	}
-	wg.Wait()
-}
+const (
+	sleepTime = time.Nanosecond * 10
+	nTask = 1000000
+)
 
 func BenchmarkTask(b *testing.B) {
 	b.Run("NoWorkerPool", func(b *testing.B) {
@@ -38,39 +23,91 @@ func BenchmarkTask(b *testing.B) {
 	})
 	b.Run("UseWorkerPool", func(b *testing.B) {
 		b.ReportAllocs()
+		var wg sync.WaitGroup
 		onErr := func(err error) {
 			fmt.Println(err)
 		}
-		pool := NewWorkerPool(80, 160, time.Minute, onErr)
+		handle := func(data interface{}) error{
+			time.Sleep(sleepTime)
+			wg.Done()
+			return nil
+		}
+		pool := NewWorkerPool(64, 256 * runtime.NumCPU(),handle,onErr)
 		for i := 0; i < b.N; i++ {
-			useWorkerPool(pool)
+			wg.Add(nTask)
+			for i := 0; i < nTask; i++ {
+				pool.PushTask(0)
+			}
+			wg.Wait()
 		}
 	})
 }
 
 func noPool() {
 	var wg sync.WaitGroup
-	wg.Add(100000)
-	var count int64
-	for i := 0; i < 100000; i++ {
+	wg.Add(nTask)
+	for i := 0; i < nTask; i++ {
 		go func() {
-			atomic.AddInt64(&count, 1)
+			time.Sleep(sleepTime)
 			wg.Done()
 		}()
 	}
 	wg.Wait()
 }
 
-func useWorkerPool(pool *WorkerPool) {
-	var wg sync.WaitGroup
-	wg.Add(100000)
-	var count int64
-	for i := 0; i < 100000; i++ {
-		pool.AddTask(func() error {
-			atomic.AddInt64(&count, 1)
+func BenchmarkSocketClose(b *testing.B) {
+	server,err := net.Listen("tcp","127.0.0.1:4567")
+	if err != nil {
+		b.Fatal(err)
+	}
+	go func() {
+		for {
+			conn, _ := server.Accept()
+			_ = conn.Close()
+		}
+	}()
+	nConn := 10000
+	conns := make([]net.Conn,0,nConn)
+	for i := 0; i < nConn; i++ {
+		conn, err := net.Dial("tcp", "127.0.0.1:4567")
+		if err != nil {
+			b.Fatal(err)
+		}
+		conns = append(conns,conn)
+	}
+	b.Run("NoPoolRead", func(b *testing.B) {
+		b.ReportAllocs()
+		var wg sync.WaitGroup
+		for i := 0; i < b.N; i++ {
+			wg.Add(nConn)
+			for i := 0 ; i < nConn; i++{
+				go func(conn net.Conn) {
+					_ = conn.Close()
+					wg.Done()
+				}(conns[i])
+			}
+			wg.Wait()
+		}
+	})
+	b.Run("UsePoolRead", func(b *testing.B) {
+		b.ReportAllocs()
+		var wg sync.WaitGroup
+		handleFn := func(data interface{}) error {
+			conn := data.(net.Conn)
+			_ = conn.Close()
 			wg.Done()
 			return nil
-		})
-	}
-	wg.Wait()
+		}
+		onErr := func(err2 error) {
+			return
+		}
+		pool := NewWorkerPool(64,1024,handleFn,onErr)
+		for i := 0; i < b.N; i++ {
+			wg.Add(nConn)
+			for i := 0; i < nConn; i++ {
+				pool.PushTask(conns[i])
+			}
+			wg.Wait()
+		}
+	})
 }
