@@ -3,6 +3,7 @@ package ddio
 import (
 	"errors"
 	"github.com/zbh255/nyan/container"
+	"github.com/zbh255/nyan/event_poll/internal"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,20 +24,36 @@ type ddTimer struct {
 	ticker *time.Ticker
 	// 关闭标志
 	closed int64
+	// 绑定的工作池
+	wp *internal.WorkerPool
 }
 
 type timerData [2]interface{}
 
-func newDDTimer(initTime time.Duration,click time.Duration) *ddTimer {
+func newDDTimer(initTime time.Duration,click time.Duration,wpSize,wpBufSize int) *ddTimer {
 	ticker := time.NewTicker(click)
+	wp := internal.NewWorkerPool(wpSize,wpBufSize,timerHandle, func(_ error) {
+		return
+	})
 	ddt := &ddTimer{
 		lHeap: container.NewLittleHeap(1 << 8),
 		click: initTime,
 		ticker: ticker,
+		wp: wp,
 	}
 	go ddt.OpenTimerLoop()
 	return ddt
 }
+
+func timerHandle(data interface{}) error {
+	elem := data.(container.TimeoutElem)
+	td := elem.Data.(timerData)
+	uData := td[0]
+	uTimer := td[1].(TimerTask)
+	uTimer(uData,elem.TimeOut)
+	return nil
+}
+
 
 // AddTimer isAbsTimeOut == true则意味着这个超时值是绝对时间
 func (t *ddTimer) AddTimer(isAbsTimeOut bool, timeOut time.Duration, data interface{}, timer TimerTask) {
@@ -59,6 +76,9 @@ func (t *ddTimer) AddTimer(isAbsTimeOut bool, timeOut time.Duration, data interf
 // Click 如果要检查多个过期Timer，调用者需要将timeOut设置为0重复检查
 // 这是从内存复用的角度考虑
 func (t *ddTimer) Click(timeOut time.Duration) (elem container.TimeoutElem) {
+	if t.lHeap.IsEmpty() {
+		return container.TimeoutElem{}
+	}
 	t.click += timeOut
 	topTimeOut := t.lHeap.Peek().TimeOut
 	// 到点则触发到期
@@ -69,13 +89,17 @@ func (t *ddTimer) Click(timeOut time.Duration) (elem container.TimeoutElem) {
 }
 
 func (t *ddTimer) ResetClick() {
+	t.mu.Lock()
 	t.click = 0
+	t.mu.Unlock()
 }
 
 func (t *ddTimer) Close() error {
 	if !atomic.CompareAndSwapInt64(&t.closed,0,1) {
 		return errors.New("timer is closed")
 	}
+	t.ticker.Stop()
+	t.wp.Stop()
 	return nil
 }
 
@@ -86,10 +110,7 @@ func (t *ddTimer) OpenTimerLoop() {
 		case <-t.ticker.C:
 			t.mu.Lock()
 			for elem := t.Click(time.Millisecond); elem.Data != nil; {
-				td := elem.Data.(timerData)
-				uData := td[0]
-				uTimer := td[1].(TimerTask)
-				uTimer(uData,elem.TimeOut)
+				t.wp.PushTask(elem)
 				elem = t.Click(0)
 			}
 			t.mu.Unlock()

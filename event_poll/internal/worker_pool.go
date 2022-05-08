@@ -5,7 +5,6 @@ import (
 	"runtime"
 )
 
-// WorkerPool TODO 重构工作池的代码
 // WorkerPool 一个简单实现的工作池
 type WorkerPool struct {
 	// 繁忙时的大小
