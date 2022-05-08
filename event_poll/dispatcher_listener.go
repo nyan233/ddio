@@ -1,27 +1,31 @@
 package ddio
 
 import (
+	"context"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"syscall"
 )
 
 // ListenerMultiEventDispatcher 主多路事件派发器
 type ListenerMultiEventDispatcher struct {
+	// 提升关闭的速度
+	wg *sync.WaitGroup
+	// 子Reactor的Count
+	subWg sync.WaitGroup
+	// context用于通知关闭
+	// 该Context也会一起被派生到子Reactor中
+	// 所以上层调用CancelFunc时，子Reactor也会感受到关闭事件
+	ctx context.Context
 	handler ListenerEventHandler
 	poll    EventLoop
 	// 与监听事件多路事件派发器绑定的连接多路事件派发器
 	connMds []*ConnMultiEventDispatcher
-	// 关闭标志
-	closed uint64
-	// 完成通知
-	done chan struct{}
 	// 一些主多路事件派发器的配置
 	config *ListenerConfig
 }
 
-func NewListenerMultiEventDispatcher(handler ListenerEventHandler, config *ListenerConfig) (*ListenerMultiEventDispatcher, error) {
+func NewListenerMultiEventDispatcher(ctx context.Context, wg *sync.WaitGroup, handler ListenerEventHandler, config *ListenerConfig) (*ListenerMultiEventDispatcher, error) {
 	lmed := &ListenerMultiEventDispatcher{}
 	// 启动绑定的从多路事件派发器
 	nMds := runtime.NumCPU()
@@ -36,15 +40,20 @@ func NewListenerMultiEventDispatcher(handler ListenerEventHandler, config *Liste
 	}
 	connMds := make([]*ConnMultiEventDispatcher, nMds)
 	connConfig := config.ConnEHd.OnInit()
+	// Sub-Reactor WaitGroup
+	lmed.subWg = sync.WaitGroup{}
+	lmed.subWg.Add(nMds)
 	for i := 0; i < len(connMds); i++ {
-		tmp, err := NewConnMultiEventDispatcher(config.ConnEHd, connConfig)
+		subCtx := context.WithValue(ctx,0,0)
+		tmp, err := NewConnMultiEventDispatcher(subCtx, &lmed.subWg, config.ConnEHd, connConfig)
 		tmp.bufferPool = &pool
 		if err != nil {
 			return nil, err
 		}
 		connMds[i] = tmp
 	}
-	lmed.done = make(chan struct{},1)
+	lmed.wg = wg
+	lmed.ctx = ctx
 	lmed.connMds = connMds
 	lmed.handler = handler
 	lmed.config = config
@@ -66,29 +75,27 @@ func NewListenerMultiEventDispatcher(handler ListenerEventHandler, config *Liste
 	return lmed, nil
 }
 
-func (l *ListenerMultiEventDispatcher) Close() error {
-	if !atomic.CompareAndSwapUint64(&l.closed, 0, 1) {
-		return ErrorEpollClosed
-	}
-	<-l.done
-	// 触发主多路事件派发器的定义的错误回调函数
-	// 因为负责监听连接的Fd只有一个，所以直接取就好
-	l.handler.OnError(l.poll.AllEvents()[0], ErrorEpollClosed)
-	// 关闭所有子事件派发器
-	for _, v := range l.connMds {
-		v.Close()
-	}
-	return l.poll.Exit()
-}
 
 func (l *ListenerMultiEventDispatcher) openLoop() {
 	defer func() {
-		l.done <- struct{}{}
+		l.wg.Done()
 	}()
 	receiver := make([]Event, 1)
 	for {
-		if atomic.LoadUint64(&l.closed) == 1 {
+		// 在事件循环里检测关闭
+		select {
+		case <-l.ctx.Done():
+			// 触发主多路事件派发器的定义的错误回调函数
+			// 因为负责监听连接的Fd只有一个，所以直接取就好
+			l.handler.OnError(l.poll.AllEvents()[0], ErrorEpollClosed)
+			// 等待绑定的子Reactor关闭
+			l.subWg.Wait()
+			// 关闭Poller
+			// TODO 想办法传递Poller关闭时的错误
+			_ = l.poll.Exit()
 			return
+		default:
+			break
 		}
 		events, err := l.poll.Exec(receiver, EVENT_LOOP_SLEEP)
 		if events == 0 {

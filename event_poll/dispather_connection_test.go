@@ -1,6 +1,10 @@
 package ddio
 
-import "testing"
+import (
+	"context"
+	"sync"
+	"testing"
+)
 
 //TODO:  ConnMultiEventDispatcher的逃逸分析视图
 func TestConnMultiEventDispatcherEscape(t *testing.T) {
@@ -8,5 +12,5 @@ func TestConnMultiEventDispatcherEscape(t *testing.T) {
 	//	err := recover()
 	//	t.Error(err)
 	//}()
-	_, _ = NewConnMultiEventDispatcher(nil, DefaultConfig)
+	_, _ = NewConnMultiEventDispatcher(context.Background(), &sync.WaitGroup{}, nil, DefaultConfig)
 }

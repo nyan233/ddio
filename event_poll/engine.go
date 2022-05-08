@@ -1,10 +1,12 @@
 package ddio
 
 import (
+	"context"
 	"errors"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Engine 实例
@@ -13,6 +15,10 @@ type Engine struct {
 	mds []*ListenerMultiEventDispatcher
 	// 配置参数
 	config *NetPollConfig
+	// Main-Reactor & Sub-Reactor的Context取消函数
+	cancelFn context.CancelFunc
+	// Main-Reactor & Sub-Reactor的关闭计数
+	wg sync.WaitGroup
 }
 
 func NewEngine(handler ListenerEventHandler, config *EngineConfig) (*Engine, error) {
@@ -56,10 +62,16 @@ func NewEngine(handler ListenerEventHandler, config *EngineConfig) (*Engine, err
 	}
 	// 根据新确定的监听线程数量调整mds
 	engine.mds = make([]*ListenerMultiEventDispatcher, 0, newNMds)
+	// context
+	ctx,cancel := context.WithCancel(context.Background())
+	engine.cancelFn = cancel
+	// WaitGroup
+	engine.wg = sync.WaitGroup{}
+	engine.wg.Add(newNMds)
 	// 创建对应数量的监听线程
 	for k, v := range addrNMds {
 		for i := 0; i < v; i++ {
-			tmp, err := NewListenerMultiEventDispatcher(handler, &ListenerConfig{
+			tmp, err := NewListenerMultiEventDispatcher(ctx, &engine.wg, handler, &ListenerConfig{
 				ConnEHd:       config.ConnHandler,
 				Balance:       config.NBalance(),
 				NetPollConfig: &netPollConfigs[k],
@@ -75,11 +87,7 @@ func NewEngine(handler ListenerEventHandler, config *EngineConfig) (*Engine, err
 }
 
 func (e *Engine) Close() error {
-	for _, v := range e.mds {
-		err := v.Close()
-		if err != nil {
-			return err
-		}
-	}
+	e.cancelFn()
+	e.wg.Wait()
 	return nil
 }

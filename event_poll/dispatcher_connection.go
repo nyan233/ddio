@@ -1,10 +1,10 @@
 package ddio
 
 import (
+	"context"
 	"errors"
 	ch "github.com/zbh255/nyan/event_poll/internal/conn_handler"
 	"sync"
-	"sync/atomic"
 	"syscall"
 )
 
@@ -17,8 +17,10 @@ const (
 type ConnMultiEventDispatcher struct {
 	handler    ConnectionEventHandler
 	poll       EventLoop
-	closed     uint64
-	done       chan struct{}
+	// 记录以关闭的Reactor数量
+	wg *sync.WaitGroup
+	// 上层调用者用于通知关闭事件的Context
+	ctx context.Context
 	connConfig ConnConfig
 	/*
 		从Reactor除了添加和删除事件之外和其他的goroutine
@@ -33,10 +35,12 @@ type ConnMultiEventDispatcher struct {
 	// 所有子Reactor共享的Pool
 	// 该值应该由主Reactor初始化时设置
 	bufferPool *sync.Pool
+	// 每个Sub-Reactor中独立的定时器
+	timer *ddTimer
 }
 
 
-func NewConnMultiEventDispatcher(handler ConnectionEventHandler, connConfig ConnConfig) (*ConnMultiEventDispatcher, error) {
+func NewConnMultiEventDispatcher(ctx context.Context, wg *sync.WaitGroup, handler ConnectionEventHandler, connConfig ConnConfig) (*ConnMultiEventDispatcher, error) {
 	cmed := &ConnMultiEventDispatcher{}
 	cmed.handler = handler
 	poller, err := NewPoller()
@@ -45,7 +49,9 @@ func NewConnMultiEventDispatcher(handler ConnectionEventHandler, connConfig Conn
 		return nil, err
 	}
 	cmed.connConfig = connConfig
-	cmed.done = make(chan struct{},1)
+	// sync
+	cmed.ctx = ctx
+	cmed.wg = wg
 	cmed.poll = poller
 	// memory pool
 	//cmed.bigMemPool = NewBufferPool(12, int(math.Log2(ONCE_MAX_EVENTS)))
@@ -70,21 +76,10 @@ func (p *ConnMultiEventDispatcher) AddConnEvent(ev *Event) error {
 	return nil
 }
 
-func (p *ConnMultiEventDispatcher) Close() error {
-	if !atomic.CompareAndSwapUint64(&p.closed, 0, 1) {
-		// 不允许重复关闭
-		return ErrorEpollClosed
-	}
-	<-p.done
-	for _, v := range p.poll.AllEvents() {
-		p.handler.OnError(v, ErrorEpollClosed)
-	}
-	return nil
-}
 
 func (p *ConnMultiEventDispatcher) openLoop() {
 	defer func() {
-		p.done <- struct{}{}
+		p.wg.Done()
 	}()
 	// 记录的待写入的Conn
 	// 使用TCPConn而不使用*TCPConn的原因是防止对象逃逸
@@ -99,9 +94,19 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 	p.littleMemPool = NewBufferPool(12, 10)
 	receiver := make([]Event, ONCE_MAX_EVENTS)
 	for {
-		// 检测关闭信号
-		if atomic.LoadUint64(&p.closed) == 1 {
+		// 在事件循环中检测关闭信号
+		select {
+		case <-p.ctx.Done():
+			// 通知所有连接Poller已经关闭
+			for _, v := range p.poll.AllEvents() {
+				p.handler.OnError(v, ErrorEpollClosed)
+			}
+			// 关闭Poller
+			// TODO 想办法传递Poller关闭时的错误
+			_ = p.poll.Exit()
 			return
+		default:
+			break
 		}
 		nEvent, err := p.poll.Exec(receiver, EVENT_LOOP_SLEEP)
 		//events, err := p.poll.Exec(ONCE_MAX_EVENTS,-1)
@@ -133,6 +138,8 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 		}
 	}
 }
+
+
 
 // wPoolAlloc指示写缓冲区是否从p.bufferPool分配，该成员类型是*sync.Pool
 func (p *ConnMultiEventDispatcher) handlerReadEvent(ev Event, writeConns map[int]TCPConn) (wPoolAlloc bool) {
