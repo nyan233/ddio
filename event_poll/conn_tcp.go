@@ -1,9 +1,14 @@
 package ddio
 
 import (
+	"errors"
 	"net"
-	"syscall"
+	"sync/atomic"
 	"time"
+)
+
+var (
+	ErrConnClosed = errors.New("conn is closed")
 )
 
 type TCPConn struct {
@@ -17,7 +22,7 @@ type TCPConn struct {
 	hd         AfterHandler
 	nextNBlock int
 	// 告诉事件循环，用户代码已经将连接关闭
-	closed bool
+	closed uint32
 	//bigMemPool *MemoryPool
 	//bufferPool *sync.Pool
 	// 注册的专门用于扩容缓存区的函数
@@ -27,6 +32,8 @@ type TCPConn struct {
 	// sync.Pool分配的缓冲元素
 	//buf *bufferElem
 	addr net.Addr
+	// 定时器，用于设置连接死线相关功能
+	timer *ddTimer
 }
 
 func (T *TCPConn) TakeReadBytes() []byte {
@@ -64,19 +71,26 @@ func (T *TCPConn) Next(nBlock int) {
 	T.nextNBlock = nBlock
 }
 
+// Close 设置一个关闭标志，事件循环会审查这个标志，在写入完缓存区的数据或者出错时会将其关闭
 func (T *TCPConn) Close() error {
-	T.closed = true
-	return syscall.Close(T.rawFd)
+	if !atomic.CompareAndSwapUint32(&T.closed,0,1) {
+		return ErrConnClosed
+	}
+	return nil
 }
 
 func (T *TCPConn) Addr() net.Addr {
 	return T.addr
 }
 
-func (T *TCPConn) SetDeadLine(deadline time.Time) error {
-	panic("implement me")
+func (T *TCPConn) timeoutHandler(data interface{},timeOut time.Duration) {
+	_ = T.Close()
+}
+
+func (T *TCPConn) SetDeadLine(deadline time.Duration) error {
+	return T.timer.AddTimer(true,deadline,0,T.timeoutHandler)
 }
 
 func (T *TCPConn) SetTimeout(timeout time.Duration) error {
-	panic("implement me")
+	return T.timer.AddTimer(false,timeout,0,T.timeoutHandler)
 }

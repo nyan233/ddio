@@ -83,7 +83,7 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 	}()
 	// 记录的待写入的Conn
 	// 使用TCPConn而不使用*TCPConn的原因是防止对象逃逸
-	writeConns := make(map[int]TCPConn, ONCE_MAX_EVENTS)
+	writeConns := make(map[int]*TCPConn, ONCE_MAX_EVENTS)
 	freeWConn := func(fd int) {
 		delete(writeConns, fd)
 	}
@@ -142,7 +142,7 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 
 
 // wPoolAlloc指示写缓冲区是否从p.bufferPool分配，该成员类型是*sync.Pool
-func (p *ConnMultiEventDispatcher) handlerReadEvent(ev Event, writeConns map[int]TCPConn) (wPoolAlloc bool) {
+func (p *ConnMultiEventDispatcher) handlerReadEvent(ev Event, writeConns map[int]*TCPConn) (wPoolAlloc bool) {
 	bc := ch.BeforeConnHandler{}
 	buffer, ok := p.littleMemPool.AllocBuffer(1)
 	var rPoolAlloc bool
@@ -186,6 +186,9 @@ readEvent:
 				wPoolAlloc = true
 			}
 			tcpConn.wBytes = wBuffer[:0]
+			// 设置Conn中会用到的函数
+			tcpConn.appendFn = p.appendBytes
+			tcpConn.freeFn = p.freeBytes
 			err := p.handler.OnData(tcpConn)
 			if err != nil {
 				p.handler.OnError(ev, errors.New("OnData error: "+err.Error()))
@@ -205,7 +208,14 @@ readEvent:
 			// 写缓冲区有数据时则注册写事件
 			if len(tcpConn.wBytes) > 0 {
 				p.modWrite(ev)
-				writeConns[tcpConn.rawFd] = *tcpConn
+				writeConns[tcpConn.rawFd] = tcpConn
+			} else {
+				if checkConnClosed(tcpConn) {
+					err := bc.Close(tcpConn.rawFd)
+					if err != nil {
+						logger.ErrorFromErr(err)
+					}
+				}
 			}
 			break
 		} else if err == syscall.EINTR {
@@ -268,7 +278,7 @@ readEvent:
 	return
 }
 
-func (p *ConnMultiEventDispatcher) handlerWriteEvent(ev Event, writeConns map[int]TCPConn) {
+func (p *ConnMultiEventDispatcher) handlerWriteEvent(ev Event, writeConns map[int]*TCPConn) {
 	bc := &ch.BeforeConnHandler{}
 	tcpConn, ok := writeConns[int(ev.fd())]
 	if !ok {
@@ -286,6 +296,12 @@ func (p *ConnMultiEventDispatcher) handlerWriteEvent(ev Event, writeConns map[in
 		}
 		// 写完
 		if len(wb) == 0 {
+			// 写完数据检查关闭标志，关闭标志可能因为定时器中的超时任务被更新
+			if checkConnClosed(tcpConn) {
+				if err := bc.Close(tcpConn.rawFd); err != nil {
+					logger.ErrorFromErr(err)
+				}
+			}
 			break
 		}
 	}

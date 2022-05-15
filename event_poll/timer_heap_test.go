@@ -9,10 +9,10 @@ import (
 
 func TestTimer(t *testing.T) {
 	now := time.Duration(time.Now().UnixNano())
-	timer := newDDTimer(now,time.Millisecond,64,1024 * 1024)
 	// 添加100万个超时事件
 	rand.Seed(time.Now().UnixNano())
 	nEvent := 1000000
+	timer := newDDTimer(now,time.Millisecond,64,1024 * 1024,nEvent)
 	var wg sync.WaitGroup
 	mu := sync.Mutex{}
 	wg.Add(nEvent)

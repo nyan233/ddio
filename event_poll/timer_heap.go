@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+var (
+	// ErrTimerClosed 时间堆已经被关闭
+	ErrTimerClosed = errors.New("timer is closed")
+	// ErrTimerFull 时间堆的定时任务数量已经到达设定的最大值
+	ErrTimerFull = errors.New("time is full")
+)
+
 /*
 	基于小顶堆的定时器的实现
 	该实现是线程安全的
@@ -24,13 +31,15 @@ type ddTimer struct {
 	ticker *time.Ticker
 	// 关闭标志
 	closed int64
+	// 活跃定时任务的最大数量
+	maxSize int
 	// 绑定的工作池
 	wp *internal.WorkerPool
 }
 
 type timerData [2]interface{}
 
-func newDDTimer(initTime time.Duration,click time.Duration,wpSize,wpBufSize int) *ddTimer {
+func newDDTimer(initTime time.Duration,click time.Duration,wpSize,wpBufSize,maxSize int) *ddTimer {
 	ticker := time.NewTicker(click)
 	wp := internal.NewWorkerPool(wpSize,wpBufSize,timerHandle, func(_ error) {
 		return
@@ -40,6 +49,7 @@ func newDDTimer(initTime time.Duration,click time.Duration,wpSize,wpBufSize int)
 		click: initTime,
 		ticker: ticker,
 		wp: wp,
+		maxSize: maxSize,
 	}
 	go ddt.OpenTimerLoop()
 	return ddt
@@ -56,9 +66,15 @@ func timerHandle(data interface{}) error {
 
 
 // AddTimer isAbsTimeOut == true则意味着这个超时值是绝对时间
-func (t *ddTimer) AddTimer(isAbsTimeOut bool, timeOut time.Duration, data interface{}, timer TimerTask) {
+func (t *ddTimer) AddTimer(isAbsTimeOut bool, timeOut time.Duration, data interface{}, timer TimerTask) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if atomic.LoadInt64(&t.closed) == 1 {
+		return ErrTimerClosed
+	}
+	if t.maxSize <= t.lHeap.Size() {
+		return ErrTimerFull
+	}
 	t.lHeap.Insert(container.TimeoutElem{
 		TimeOut: func() time.Duration {
 			if isAbsTimeOut {
@@ -71,6 +87,7 @@ func (t *ddTimer) AddTimer(isAbsTimeOut bool, timeOut time.Duration, data interf
 			timer,
 		},
 	})
+	return nil
 }
 
 // Click 如果要检查多个过期Timer，调用者需要将timeOut设置为0重复检查
@@ -96,7 +113,7 @@ func (t *ddTimer) ResetClick() {
 
 func (t *ddTimer) Close() error {
 	if !atomic.CompareAndSwapInt64(&t.closed,0,1) {
-		return errors.New("timer is closed")
+		return ErrTimerClosed
 	}
 	t.ticker.Stop()
 	t.wp.Stop()
