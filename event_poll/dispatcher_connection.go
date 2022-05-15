@@ -169,12 +169,12 @@ readEvent:
 		if readN > 0 {
 			bufferReadN += readN
 		}
-		if onDataOk {
-			err = syscall.EAGAIN
-		}
 		// 检查数据是否把缓存区填满且读取无错误，如果是则扩容再读取
 		if err == nil && bufferReadN == cap(buffer) {
 			err = syscall.EINTR
+		}
+		if onDataOk {
+			err = syscall.EAGAIN
 		}
 
 		if err == syscall.EAGAIN || err == nil {
@@ -215,6 +215,7 @@ readEvent:
 			}
 			// 检查是否符合触发OnData事件需要读取的Buffer-Block数量
 			if len(buffer)/BUFFER_SIZE >= p.connConfig.OnDataNBlock {
+				onDataOk = true
 				goto readEvent
 			}
 			var growOk bool
