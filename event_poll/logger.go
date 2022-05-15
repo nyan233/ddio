@@ -7,5 +7,5 @@ import (
 
 var (
 	logger bilog.Logger = bilog.NewLogger(os.Stdout, bilog.PANIC, bilog.WithTimes(), bilog.WithCaller(),
-		bilog.WithTopBuffer(8), bilog.WithLowBuffer(2))
+		bilog.WithTopBuffer(0), bilog.WithLowBuffer(0))
 )
