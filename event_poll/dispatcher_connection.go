@@ -165,10 +165,18 @@ readEvent:
 	for i := 0; i < p.connConfig.MaxReadSysCallNumberOnEventLoop; i++ {
 		readN, err := bc.NioRead(tcpConn.rawFd, rb[bufferReadN:])
 		// bufferReadN指示以读取数据的长度
-		bufferReadN += readN
+		// readN在出错时有可能会为-1，这里做处理
+		if readN > 0 {
+			bufferReadN += readN
+		}
 		if onDataOk {
 			err = syscall.EAGAIN
 		}
+		// 检查数据是否把缓存区填满且读取无错误，如果是则扩容再读取
+		if err == nil && bufferReadN == cap(buffer) {
+			err = syscall.EINTR
+		}
+
 		if err == syscall.EAGAIN || err == nil {
 			tcpConn.rBytes = buffer[:bufferReadN]
 			// 分配写缓冲区
@@ -222,6 +230,15 @@ readEvent:
 					p.littleMemPool.FreeBuffer(&buffer)
 					buffer = newBuf
 					growOk = true
+				} else {
+					// 从小缓冲区将数据复制到大缓冲区
+					newBuf = newBuf[:cap(newBuf)]
+					copy(newBuf,buffer)
+					// 释放原来的缓冲区
+					p.littleMemPool.FreeBuffer(&buffer)
+					buffer = newBuf
+					// 同时重置临时用于读的缓冲区
+					rb = buffer
 				}
 			}
 			// 如果不判断是否已经扩容的话，就会导致重复扩容
@@ -233,10 +250,14 @@ readEvent:
 					rPoolAlloc = true
 					p.bigMemPool.FreeBuffer(&buffer)
 					buffer = newBuf
+				} else {
+					newBuf = newBuf[:cap(newBuf)]
+					buffer = newBuf
+					// 同时重置临时用于读的缓冲区
+					rb = buffer
 				}
 			}
-			// reset read buffer
-			rb = buffer[:cap(buffer)]
+
 			continue
 		} else if err != nil {
 			p.handler.OnError(ev, ErrRead)

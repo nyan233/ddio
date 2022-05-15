@@ -163,26 +163,28 @@ func (p *MemoryPool) IsAlloc(buf []byte) bool {
 }
 
 // Grow 扩容原来的Buffer,可指定的扩容大小为n * p.block
+// 扩容之后的Buffer长度被设置为跟未扩容前的Buffer一致，这是为了兼容性考虑
 // Example
-//	pool.Grow(&buffer,4)
+//	pool := NewBufferPool(13,10)
+//	pool.Grow(&buffer,2)
+//	fmt.Println(cap(buffer))
+// Output:
+//	16384
 func (p *MemoryPool) Grow(ptr *[]byte, nBlock int) bool {
 	if !checkN(nBlock) {
 		return false
 	}
-	p.mu.Lock()
-	header := (*reflect.SliceHeader)(unsafe.Pointer(ptr))
-	// 计算扩容Buffer需要多少Block
-	growNBlock := header.Cap/int(p.block) + nBlock
-	p.mu.Unlock()
-	growBuffer, ok := p.AllocBuffer(growNBlock)
+	// 按照nBlock来扩容
+	growBuffer, ok := p.AllocBuffer(nBlock)
 	if !ok {
 		return ok
 	}
 	// 分配新的Buffer并将旧的Buffer拷贝进去
-	growBuffer = growBuffer[:header.Len]
+	growBuffer = growBuffer[:len(*ptr)]
 	copy(growBuffer, *ptr)
 	// 释放旧的Buffer
 	p.FreeBuffer(ptr)
+	*ptr = growBuffer
 	return true
 }
 
