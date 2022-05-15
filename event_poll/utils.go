@@ -5,6 +5,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"unsafe"
 )
 
@@ -20,6 +21,11 @@ func doubleGrow(memPool *MemoryPool, oldBuf []byte) (newBuf []byte, bl bool) {
 		newBuf = oldBuf
 	}
 	return
+}
+
+// Sub-Reactor用于检查连接关闭标志
+func checkConnClosed(conn *TCPConn) bool {
+	return atomic.LoadUint32(&conn.closed) == 1
 }
 
 func parseAddress(addr string) (config NetPollConfig, argMap map[string]string, err error) {
