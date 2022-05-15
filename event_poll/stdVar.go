@@ -26,7 +26,7 @@ const (
 	// MAX_POLLER_ONCE_EVENTS 各底层Poller一次最多响应的就绪事件
 	MAX_POLLER_ONCE_EVENTS = 1024
 	// EVENT_LOOP_SLEEP 事件循环阻塞等待就绪事件的默认超时时间
-	EVENT_LOOP_SLEEP time.Duration = time.Millisecond
+	EVENT_LOOP_SLEEP = time.Second
 )
 
 const (

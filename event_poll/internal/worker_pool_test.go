@@ -66,7 +66,7 @@ func BenchmarkSocketClose(b *testing.B) {
 			_ = conn.Close()
 		}
 	}()
-	nConn := 10000
+	nConn := 5000
 	conns := make([]net.Conn,0,nConn)
 	for i := 0; i < nConn; i++ {
 		conn, err := net.Dial("tcp", "127.0.0.1:4567")
