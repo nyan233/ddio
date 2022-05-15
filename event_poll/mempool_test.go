@@ -1,6 +1,7 @@
 package ddio
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -38,6 +39,32 @@ func TestMemPool(t *testing.T) {
 			pool.FreeBuffer(buf)
 		}
 	}
+}
+
+// 测试MemoryPool每个方法的功能
+func TestFunction(t *testing.T) {
+	pool := NewBufferPool(13,10)
+	buf,ok := pool.AllocBuffer(1)
+	if !ok {
+		t.Fatal(errors.New("alloc buffer failed"))
+	}
+	if pool.BlockSize() != 1 << 13 {
+		t.Fatal(errors.New("pool block size is error"))
+	}
+	if pool.Size() != (1 << 10) * (1 << 13) {
+		t.Fatal(errors.New("pool size is error"))
+	}
+	ok = pool.Grow(&buf,2)
+	if !ok {
+		t.Fatal(errors.New("pool grow failed"))
+	}
+	if cap(buf) != pool.BlockSize() * 2 {
+		t.Fatal(errors.New("pool grow size not equal to 2 block size"))
+	}
+	if !pool.IsAlloc(buf) {
+		t.Fatal(errors.New("is pool alloc but IsAlloc return false"))
+	}
+	pool.FreeBuffer(&buf)
 }
 
 func BenchmarkAlloc(b *testing.B) {
