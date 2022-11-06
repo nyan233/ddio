@@ -17,9 +17,9 @@ var (
 )
 
 /*
-	基于小顶堆的定时器的实现
-	该实现是线程安全的
-	TODO 该定时器的实现在百万/千万级别的任务处理时延迟明显，考虑用工作池来优化
+基于小顶堆的定时器的实现
+该实现是线程安全的
+TODO 该定时器的实现在百万/千万级别的任务处理时延迟明显，考虑用工作池来优化
 */
 type ddTimer struct {
 	mu sync.Mutex
@@ -39,16 +39,16 @@ type ddTimer struct {
 
 type timerData [2]interface{}
 
-func newDDTimer(initTime time.Duration,click time.Duration,wpSize,wpBufSize,maxSize int) *ddTimer {
+func newDDTimer(initTime time.Duration, click time.Duration, wpSize, wpBufSize, maxSize int) *ddTimer {
 	ticker := time.NewTicker(click)
-	wp := internal.NewWorkerPool(wpSize,wpBufSize,timerHandle, func(_ error) {
+	wp := internal.NewWorkerPool(wpSize, wpBufSize, timerHandle, func(_ error) {
 		return
 	})
 	ddt := &ddTimer{
-		lHeap: container.NewLittleHeap(1 << 8),
-		click: initTime,
-		ticker: ticker,
-		wp: wp,
+		lHeap:   container.NewLittleHeap(1 << 8),
+		click:   initTime,
+		ticker:  ticker,
+		wp:      wp,
 		maxSize: maxSize,
 	}
 	go ddt.OpenTimerLoop()
@@ -60,10 +60,9 @@ func timerHandle(data interface{}) error {
 	td := elem.Data.(timerData)
 	uData := td[0]
 	uTimer := td[1].(TimerTask)
-	uTimer(uData,elem.TimeOut)
+	uTimer(uData, elem.TimeOut)
 	return nil
 }
-
 
 // AddTimer isAbsTimeOut == true则意味着这个超时值是绝对时间
 func (t *ddTimer) AddTimer(isAbsTimeOut bool, timeOut time.Duration, data interface{}, timer TimerTask) error {
@@ -82,7 +81,7 @@ func (t *ddTimer) AddTimer(isAbsTimeOut bool, timeOut time.Duration, data interf
 			}
 			return t.click + timeOut
 		}(),
-		Data:    timerData{
+		Data: timerData{
 			data,
 			timer,
 		},
@@ -112,7 +111,7 @@ func (t *ddTimer) ResetClick() {
 }
 
 func (t *ddTimer) Close() error {
-	if !atomic.CompareAndSwapInt64(&t.closed,0,1) {
+	if !atomic.CompareAndSwapInt64(&t.closed, 0, 1) {
 		return ErrTimerClosed
 	}
 	t.ticker.Stop()

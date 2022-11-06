@@ -11,7 +11,7 @@ import (
 
 const (
 	sleepTime = time.Nanosecond * 10
-	nTask = 1000000
+	nTask     = 1000000
 )
 
 func BenchmarkTask(b *testing.B) {
@@ -27,12 +27,12 @@ func BenchmarkTask(b *testing.B) {
 		onErr := func(err error) {
 			fmt.Println(err)
 		}
-		handle := func(data interface{}) error{
+		handle := func(data interface{}) error {
 			time.Sleep(sleepTime)
 			wg.Done()
 			return nil
 		}
-		pool := NewWorkerPool(64, 256 * runtime.NumCPU(),handle,onErr)
+		pool := NewWorkerPool(64, 256*runtime.NumCPU(), handle, onErr)
 		for i := 0; i < b.N; i++ {
 			wg.Add(nTask)
 			for i := 0; i < nTask; i++ {
@@ -56,7 +56,7 @@ func noPool() {
 }
 
 func BenchmarkSocketClose(b *testing.B) {
-	server,err := net.Listen("tcp","127.0.0.1:4567")
+	server, err := net.Listen("tcp", "127.0.0.1:4567")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -67,20 +67,20 @@ func BenchmarkSocketClose(b *testing.B) {
 		}
 	}()
 	nConn := 5000
-	conns := make([]net.Conn,0,nConn)
+	conns := make([]net.Conn, 0, nConn)
 	for i := 0; i < nConn; i++ {
 		conn, err := net.Dial("tcp", "127.0.0.1:4567")
 		if err != nil {
 			b.Fatal(err)
 		}
-		conns = append(conns,conn)
+		conns = append(conns, conn)
 	}
 	b.Run("NoPoolRead", func(b *testing.B) {
 		b.ReportAllocs()
 		var wg sync.WaitGroup
 		for i := 0; i < b.N; i++ {
 			wg.Add(nConn)
-			for i := 0 ; i < nConn; i++{
+			for i := 0; i < nConn; i++ {
 				go func(conn net.Conn) {
 					_ = conn.Close()
 					wg.Done()
@@ -101,7 +101,7 @@ func BenchmarkSocketClose(b *testing.B) {
 		onErr := func(err2 error) {
 			return
 		}
-		pool := NewWorkerPool(64,1024,handleFn,onErr)
+		pool := NewWorkerPool(64, 1024, handleFn, onErr)
 		for i := 0; i < b.N; i++ {
 			wg.Add(nConn)
 			for i := 0; i < nConn; i++ {

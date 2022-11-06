@@ -16,7 +16,7 @@ type ListenerMultiEventDispatcher struct {
 	// context用于通知关闭
 	// 该Context也会一起被派生到子Reactor中
 	// 所以上层调用CancelFunc时，子Reactor也会感受到关闭事件
-	ctx context.Context
+	ctx     context.Context
 	handler ListenerEventHandler
 	poll    EventLoop
 	// 与监听事件多路事件派发器绑定的连接多路事件派发器
@@ -44,7 +44,7 @@ func NewListenerMultiEventDispatcher(ctx context.Context, wg *sync.WaitGroup, ha
 	lmed.subWg = sync.WaitGroup{}
 	lmed.subWg.Add(nMds)
 	for i := 0; i < len(connMds); i++ {
-		subCtx := context.WithValue(ctx,0,0)
+		subCtx := context.WithValue(ctx, 0, 0)
 		tmp, err := NewConnMultiEventDispatcher(subCtx, &lmed.subWg, config.ConnEHd, connConfig)
 		tmp.bufferPool = &pool
 		if err != nil {
@@ -74,7 +74,6 @@ func NewListenerMultiEventDispatcher(ctx context.Context, wg *sync.WaitGroup, ha
 	go lmed.openLoop()
 	return lmed, nil
 }
-
 
 func (l *ListenerMultiEventDispatcher) openLoop() {
 	defer func() {

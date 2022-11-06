@@ -165,10 +165,13 @@ func (p *MemoryPool) IsAlloc(buf []byte) bool {
 // Grow 扩容原来的Buffer,可指定的扩容大小为n * p.block
 // 扩容之后的Buffer长度被设置为跟未扩容前的Buffer一致，这是为了兼容性考虑
 // Example
+//
 //	pool := NewBufferPool(13,10)
 //	pool.Grow(&buffer,2)
 //	fmt.Println(cap(buffer))
+//
 // Output:
+//
 //	16384
 func (p *MemoryPool) Grow(ptr *[]byte, nBlock int) bool {
 	if !checkN(nBlock) {

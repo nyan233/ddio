@@ -63,7 +63,7 @@ func NewEngine(handler ListenerEventHandler, config *EngineConfig) (*Engine, err
 	// 根据新确定的监听线程数量调整mds
 	engine.mds = make([]*ListenerMultiEventDispatcher, 0, newNMds)
 	// context
-	ctx,cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 	engine.cancelFn = cancel
 	// WaitGroup
 	engine.wg = sync.WaitGroup{}

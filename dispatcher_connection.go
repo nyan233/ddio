@@ -15,12 +15,12 @@ const (
 
 // ConnMultiEventDispatcher 从多路事件派发器
 type ConnMultiEventDispatcher struct {
-	handler    ConnectionEventHandler
-	poll       EventLoop
+	handler ConnectionEventHandler
+	poll    EventLoop
 	// 记录以关闭的Reactor数量
 	wg *sync.WaitGroup
 	// 上层调用者用于通知关闭事件的Context
-	ctx context.Context
+	ctx        context.Context
 	connConfig ConnConfig
 	/*
 		从Reactor除了添加和删除事件之外和其他的goroutine
@@ -38,7 +38,6 @@ type ConnMultiEventDispatcher struct {
 	// 每个Sub-Reactor中独立的定时器
 	timer *ddTimer
 }
-
 
 func NewConnMultiEventDispatcher(ctx context.Context, wg *sync.WaitGroup, handler ConnectionEventHandler, connConfig ConnConfig) (*ConnMultiEventDispatcher, error) {
 	cmed := &ConnMultiEventDispatcher{}
@@ -75,7 +74,6 @@ func (p *ConnMultiEventDispatcher) AddConnEvent(ev *Event) error {
 	}
 	return nil
 }
-
 
 func (p *ConnMultiEventDispatcher) openLoop() {
 	defer func() {
@@ -138,8 +136,6 @@ func (p *ConnMultiEventDispatcher) openLoop() {
 		}
 	}
 }
-
-
 
 // wPoolAlloc指示写缓冲区是否从p.bufferPool分配，该成员类型是*sync.Pool
 func (p *ConnMultiEventDispatcher) handlerReadEvent(ev Event, writeConns map[int]*TCPConn) (wPoolAlloc bool) {
@@ -244,7 +240,7 @@ readEvent:
 				} else {
 					// 从小缓冲区将数据复制到大缓冲区
 					newBuf = newBuf[:cap(newBuf)]
-					copy(newBuf,buffer)
+					copy(newBuf, buffer)
 					// 释放原来的缓冲区
 					p.littleMemPool.FreeBuffer(&buffer)
 					buffer = newBuf

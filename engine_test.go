@@ -13,7 +13,6 @@ import (
 )
 
 type testEchoServer struct {
-
 }
 
 func (t *testEchoServer) OnInit() ConnConfig {
@@ -39,15 +38,15 @@ func (t *testEchoServer) OnError(ev Event, err error) {
 	unix.Close(int(ev.fd()))
 }
 
-type testWriter struct {}
+type testWriter struct{}
 
 func (t testWriter) Write(p []byte) (n int, err error) {
-	return len(p),nil
+	return len(p), nil
 }
 
 func TestEngine(t *testing.T) {
 	// 重新设置日志组件，否则会有一些烦人的日志
-	logger = bilog.NewLogger(&testWriter{},bilog.PANIC)
+	logger = bilog.NewLogger(&testWriter{}, bilog.PANIC)
 	addrs := []string{
 		"0.0.0.0:4076",
 		"0.0.0.0:4077",
@@ -57,26 +56,26 @@ func TestEngine(t *testing.T) {
 	// 测试每个地址的客户端数量
 	addrClients := 10
 	// 保存客户端连接的map
-	client := make(map[string][]net.Conn,addrClients * len(addrs))
+	client := make(map[string][]net.Conn, addrClients*len(addrs))
 	config := &EngineConfig{
 		ConnHandler: &testEchoServer{},
 		NBalance: func() Balanced {
 			return &RoundBalanced{}
 		},
-		MultiAddr: func() []string{
-			tmp := make([]string,len(addrs))
-			for k,v := range addrs {
-				tmp[k] = fmt.Sprintf("tcp://%s?level=%d",v,10 / len(addrs))
+		MultiAddr: func() []string {
+			tmp := make([]string, len(addrs))
+			for k, v := range addrs {
+				tmp[k] = fmt.Sprintf("tcp://%s?level=%d", v, 10/len(addrs))
 			}
 			return tmp
 		}(),
 	}
-	server, err := NewEngine(NewTCPListener(EVENT_LISTENER),config)
+	server, err := NewEngine(NewTCPListener(EVENT_LISTENER), config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _,v := range addrs {
-		conns := make([]net.Conn,addrClients)
+	for _, v := range addrs {
+		conns := make([]net.Conn, addrClients)
 		for i := 0; i < addrClients; i++ {
 			conn, err := net.Dial("tcp", v)
 			if err != nil {
@@ -89,7 +88,7 @@ func TestEngine(t *testing.T) {
 	// 4096-32768Byte data
 	initV := 12
 	for i := 0; i < 4; i++ {
-		runStr := fmt.Sprintf("%dB-Send",1 << (initV + i))
+		runStr := fmt.Sprintf("%dB-Send", 1<<(initV+i))
 		t.Run(runStr, func(t *testing.T) {
 			var wg sync.WaitGroup
 			wg.Add(len(client) * addrClients)
@@ -129,8 +128,8 @@ func TestEngine(t *testing.T) {
 
 func randomNBytes(n int) []byte {
 	rand.Seed(time.Now().UnixNano())
-	tmp := make([]byte,n)
-	for k := range tmp{
+	tmp := make([]byte, n)
+	for k := range tmp {
 		tmp[k] = byte(rand.Intn(26) + 65)
 	}
 	return tmp

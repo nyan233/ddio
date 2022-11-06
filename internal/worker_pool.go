@@ -19,13 +19,13 @@ type WorkerPool struct {
 	handleFn func(data interface{}) error
 }
 
-func NewWorkerPool(size,bufSize int, handleFn func(_ interface{}) error,onErr func(_ error)) *WorkerPool {
-	ctx,cancel := context.WithCancel(context.Background())
+func NewWorkerPool(size, bufSize int, handleFn func(_ interface{}) error, onErr func(_ error)) *WorkerPool {
+	ctx, cancel := context.WithCancel(context.Background())
 	wp := &WorkerPool{
 		MaxSize:  size,
 		OnError:  onErr,
 		cancel:   cancel,
-		task:     make(chan interface{},bufSize),
+		task:     make(chan interface{}, bufSize),
 		handleFn: handleFn,
 	}
 	wp.openGs(ctx)
@@ -37,7 +37,7 @@ func (p *WorkerPool) openGs(ctx context.Context) {
 		go func() {
 			for {
 				select {
-				case data := <- p.task:
+				case data := <-p.task:
 					err := p.handleFn(data)
 					if err != nil {
 						p.OnError(err)
@@ -59,6 +59,3 @@ func (p *WorkerPool) Stop() {
 func (p *WorkerPool) PushTask(data interface{}) {
 	p.task <- data
 }
-
-
-

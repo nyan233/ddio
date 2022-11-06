@@ -73,7 +73,7 @@ func (T *TCPConn) Next(nBlock int) {
 
 // Close 设置一个关闭标志，事件循环会审查这个标志，在写入完缓存区的数据或者出错时会将其关闭
 func (T *TCPConn) Close() error {
-	if !atomic.CompareAndSwapUint32(&T.closed,0,1) {
+	if !atomic.CompareAndSwapUint32(&T.closed, 0, 1) {
 		return ErrConnClosed
 	}
 	return nil
@@ -83,14 +83,14 @@ func (T *TCPConn) Addr() net.Addr {
 	return T.addr
 }
 
-func (T *TCPConn) timeoutHandler(data interface{},timeOut time.Duration) {
+func (T *TCPConn) timeoutHandler(data interface{}, timeOut time.Duration) {
 	_ = T.Close()
 }
 
 func (T *TCPConn) SetDeadLine(deadline time.Duration) error {
-	return T.timer.AddTimer(true,deadline,0,T.timeoutHandler)
+	return T.timer.AddTimer(true, deadline, 0, T.timeoutHandler)
 }
 
 func (T *TCPConn) SetTimeout(timeout time.Duration) error {
-	return T.timer.AddTimer(false,timeout,0,T.timeoutHandler)
+	return T.timer.AddTimer(false, timeout, 0, T.timeoutHandler)
 }

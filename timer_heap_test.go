@@ -12,7 +12,7 @@ func TestTimer(t *testing.T) {
 	// 添加100万个超时事件
 	rand.Seed(time.Now().UnixNano())
 	nEvent := 1000000
-	timer := newDDTimer(now,time.Millisecond,64,1024 * 1024,nEvent)
+	timer := newDDTimer(now, time.Millisecond, 64, 1024*1024, nEvent)
 	var wg sync.WaitGroup
 	mu := sync.Mutex{}
 	wg.Add(nEvent)
@@ -27,7 +27,7 @@ func TestTimer(t *testing.T) {
 		mu.Unlock()
 	}
 	for i := 0; i < nEvent; i++ {
-		timer.AddTimer(false,time.Millisecond * time.Duration(rand.Intn(1000) + 1),10,fn)
+		timer.AddTimer(false, time.Millisecond*time.Duration(rand.Intn(1000)+1), 10, fn)
 	}
 	// 触发这些超时事件
 	wg.Wait()

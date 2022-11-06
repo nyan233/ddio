@@ -65,9 +65,14 @@ type Conn interface {
 	TakeReadBytes() []byte
 	// WriteBytes 该接口针对小数据量
 	WriteBytes(p []byte)
-	// RegisterAfterHandler 注册处理后续读数据的处理器
+	/*
+		RegisterAfterHandler 注册处理后续读数据的处理器。
+		注册的after-handler不会影响写缓冲区的数据发送，写缓冲区的数据写入完成
+		发生在after-handler被调用之前。如果希望after-handler处理完之后触发写之类
+		的操作，可以注册after-result-handler，该处理器在after-handler由于出错或者无错完成的时候被触发
+	*/
 	// TODO 是否可用于将之后的数据交给ZeroCopy系列函数来处理
-	RegisterAfterHandler(hd ConnAfterCenterHandler)
+	RegisterAfterHandler(ahd AfterHandler, rhd AfterResultHandler)
 	// Next 设置了OnDataNBlock时读不到完整的数据时
 	// 可以调用该方法接着读取N * Block的内容
 	// 调用该方法会使OnData事件重新触发
@@ -77,7 +82,7 @@ type Conn interface {
 	Close() error
 	// Addr 获取兼容net包的Socket Addr
 	Addr() net.Addr
-	SetDeadLine(deadline time.Time) error
+	SetDeadLine(deadline time.Duration) error
 	SetTimeout(timeout time.Duration) error
 }
 
@@ -90,3 +95,6 @@ type Balanced interface {
 	// connLen为子Reactor的数量，fd表示新接收连接的文件描述符的值
 	Target(connLen, fd int) int
 }
+
+// TimerTask 定时器的描述
+type TimerTask func(data interface{}, timeOut time.Duration)
