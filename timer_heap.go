@@ -2,8 +2,8 @@ package ddio
 
 import (
 	"errors"
-	"github.com/zbh255/nyan/container"
-	"github.com/zbh255/nyan/event_poll/internal"
+	"github.com/nyan233/ddio/container"
+	"github.com/nyan233/ddio/internal"
 	"sync"
 	"sync/atomic"
 	"time"

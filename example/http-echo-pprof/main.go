@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
+	"github.com/nyan233/ddio"
 	"github.com/zbh255/bilog"
-	ddio "github.com/zbh255/nyan/event_poll"
 	"net/http"
 	_ "net/http/pprof"
 	"os"

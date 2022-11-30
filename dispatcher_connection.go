@@ -3,7 +3,7 @@ package ddio
 import (
 	"context"
 	"errors"
-	ch "github.com/zbh255/nyan/event_poll/internal/conn_handler"
+	ch "github.com/nyan233/ddio/internal/conn_handler"
 	"sync"
 	"syscall"
 )
